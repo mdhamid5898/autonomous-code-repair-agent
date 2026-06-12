@@ -60,7 +60,7 @@ except Exception:  # pragma: no cover
     class _APIError(Exception):
         pass
 
-DEFAULT_MODEL = "gpt-4o"
+DEFAULT_MODEL = "deepseek-chat"
 MAX_STEPS = 30
 BASH_TIMEOUT = 90        # seconds per agent command
 GRADE_TIMEOUT = 120
@@ -83,6 +83,22 @@ def load_env() -> None:
         k, v = line.split("=", 1)
         k, v = k.strip(), v.strip().strip('"').strip("'")
         os.environ.setdefault(k, v)
+
+
+def make_client():
+    """Return an OpenAI-compatible client routed by DEFAULT_MODEL / --model flag.
+    DeepSeek uses its own base URL and DEEPSEEK_API_KEY; everything else uses OPENAI_API_KEY."""
+    from openai import OpenAI
+    model = os.environ.get("_MECHANIC_MODEL", DEFAULT_MODEL)
+    if model.startswith("deepseek"):
+        key = os.environ.get("DEEPSEEK_API_KEY")
+        if not key:
+            sys.exit("DEEPSEEK_API_KEY not set. Add it to your .env file.")
+        return OpenAI(api_key=key, base_url="https://api.deepseek.com", max_retries=6)
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        sys.exit("OPENAI_API_KEY not set. Put it in a .env file at the repo root.")
+    return OpenAI(api_key=key, max_retries=6)
 
 
 def get_issue(iid: str) -> dict:
@@ -310,6 +326,7 @@ named {test_name} has been added — it encodes the behavior your fix must produ
 Your job: make that test pass by editing the SOURCE code. NEVER edit the test file.
 
 Tools: `bash` (explore + run tests), `str_replace` (precise source edits), `submit` (finish).
+Every `bash` command already runs from the repository root: use repo-relative paths, never `cd`, and never search outside it (no `find /`).
 
 Method:
 1. Run the test to see the failure:  python -m pytest {test_name} -q -o addopts=
@@ -344,18 +361,16 @@ def _chat_with_backoff(client, model, messages, verbose, attempts=6):
 
 def run_agent(issue: dict, model: str, max_steps: int, verbose: bool, sandbox: str = "local") -> dict:
     try:
-        from openai import OpenAI
+        from openai import OpenAI  # noqa: F401 — make_client imports it
     except ImportError:
         sys.exit("openai SDK not installed. Run: uv pip install --python .venv/bin/python openai")
-    if not os.environ.get("OPENAI_API_KEY"):
-        sys.exit("OPENAI_API_KEY not set. Put it in a .env file at the repo root:\n"
-                 "  echo 'OPENAI_API_KEY=sk-...' > .env")
 
+    os.environ["_MECHANIC_MODEL"] = model
     iid = issue["id"]
     repo_dir = prepare_repo(issue, reset=True)
     test_name = drop_repro(issue, repo_dir)
     ex = DockerExecutor(repo_dir) if sandbox == "docker" else LocalExecutor(repo_dir)
-    client = OpenAI(max_retries=6)
+    client = make_client()
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.format(test_name=test_name)},
