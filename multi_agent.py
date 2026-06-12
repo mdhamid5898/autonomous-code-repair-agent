@@ -53,8 +53,9 @@ from solve import (  # noqa: E402
 )
 from langgraph.graph import StateGraph, START, END  # noqa: E402
 
-MAX_INNER_STEPS = 8       # per-specialist tool-loop cap (Localizer / Coder)
+MAX_INNER_STEPS = 8       # per-specialist tool-loop cap (the Coder)
 MAX_ITERATIONS = 4        # Coder↔Tester↔Reviewer re-plan rounds
+CODER_ACT_BY_STEP = MAX_INNER_STEPS - 3   # no edit by here → nudge the Coder to commit a fix now
 
 # reuse solve.py's bash + str_replace tool schemas; specialists add a "finish" tool
 _BASH = next(t for t in TOOLS if t["function"]["name"] == "bash")
@@ -136,12 +137,27 @@ def _single_call(client, model, system, user, tool, verbose):
         return {}
 
 
-def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose, label, transcript):
+def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose, label, transcript,
+                    act_tool=None, act_by_step=None):
     """A bounded bash/str_replace tool-loop for a specialist; returns the finish tool's
-    args (or None if it never finished). Appends tool calls to `transcript`."""
+    args (or None if it never finished). Appends tool calls to `transcript`.
+
+    act-by-step-N nudge (optional): if `act_tool` (e.g. "str_replace") still hasn't been
+    called by step `act_by_step`, an escalating user message is injected each remaining
+    step pushing the model to COMMIT its best action now. Counters the analysis-paralysis
+    the v2 sweep exposed — every multi-agent failure was the Coder exploring its whole
+    budget and never editing (resolved ⟺ ≥1 edit)."""
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     result = None
+    acted = False
     for step in range(1, MAX_INNER_STEPS + 1):
+        if act_tool and act_by_step and step > act_by_step and not acted:
+            left = MAX_INNER_STEPS - step + 1
+            messages.append({"role": "user", "content":
+                f"You have {left} step(s) left and have NOT applied a `{act_tool}` fix yet. "
+                f"STOP exploring. Apply your single best `{act_tool}` edit to the SOURCE now "
+                f"(cat the file first only if you still need exact strings), then call "
+                f"{finish_name}. A best-guess fix the Tester can check beats no fix at all."})
         msg = _chat(client, model, messages, tools, verbose)
         if msg is None:
             return {"_error": "api_error"}
@@ -164,6 +180,8 @@ def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose
                 result, out = args, "ok"
             else:
                 out = dispatch(ex, name, args)
+            if name == act_tool:
+                acted = True
             if verbose:
                 prev = args.get("cmd") or args.get("path") or args.get("summary") or args.get("target_file") or ""
                 print(f"  [{label} {step}] {name}({str(prev)[:60]})")
@@ -212,17 +230,19 @@ def build_graph(ex, client, model: str, verbose: bool):
                 f"Strategy: {plan.get('strategy')}\n"
                 f"Candidate files (from the Planner — confirm with bash before editing):\n"
                 f"{plan.get('candidate_files')}{feedback}\n\n"
-                "Localize the bug with read-only bash (grep/cat) starting from the candidate files, "
-                "then apply the smallest correct fix to the SOURCE with str_replace (cat the file first "
-                "to get exact strings). NEVER edit the test. Do NOT run the test. Finish with finish_edit.")
+                "Work fast: spend only a few steps localizing (grep/cat from the candidate files), then "
+                "you MUST apply a fix. Make the smallest correct edit to the SOURCE with str_replace (cat "
+                "the file first for exact strings) — don't over-explore; a best-guess fix the Tester can "
+                "check beats endless reading. NEVER edit the test. Do NOT run the test. Finish with finish_edit.")
         res = _run_specialist(client, model,
-                              "You are the Coder. First localize the bug with read-only bash using the "
-                              "Planner's candidate files, then apply a minimal, correct source fix via "
-                              "str_replace. Commands run from the repo root (repo-relative paths, never cd). "
-                              "Never touch the test file; don't run tests (the Tester does). "
-                              "Finish with finish_edit.",
+                              "You are the Coder. Localize quickly with read-only bash from the Planner's "
+                              "candidate files, then COMMIT a minimal source fix via str_replace — bias "
+                              "toward editing early over exploring exhaustively. Commands run from the repo "
+                              "root (repo-relative paths, never cd). Never touch the test file; don't run "
+                              "tests (the Tester does). Finish with finish_edit.",
                               user, [_BASH, _STR_REPLACE, EDIT_DONE_TOOL], "finish_edit", ex, verbose,
-                              "Coder", state["transcript"]) or {}
+                              "Coder", state["transcript"],
+                              act_tool="str_replace", act_by_step=CODER_ACT_BY_STEP) or {}
         summary = res.get("summary", "(no edit reported)")
         if verbose:
             print(f"[Coder] {summary[:90]}")
