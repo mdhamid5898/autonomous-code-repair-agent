@@ -1,0 +1,24 @@
+# secrets — never commit
+.env
+
+# harness venv (regenerated with: uv venv .venv)
+.venv/
+
+# agent run traces + generated run records
+runs/
+sweep_report.json
+
+# internal docs — not part of the public project.
+# (PRD will be cleaned up and added when the repo goes public.)
+PRD_Autonomous_Code_Repair_Agent.md
+HANDOFF.md
+.handoff/
+
+# local tooling / OS cruft
+.claude/
+.DS_Store
+**/.DS_Store
+
+# python cruft
+__pycache__/
+*.pyc
