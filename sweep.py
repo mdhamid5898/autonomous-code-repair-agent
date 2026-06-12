@@ -28,35 +28,42 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "eval"))
 
-from solve import run_agent, load_env, RUNS_DIR  # noqa: E402
+from solve import run_agent, load_env, RUNS_DIR, DEFAULT_MODEL  # noqa: E402
+from graph_solve import run_agent_graph  # noqa: E402
 from verify import load_manifest  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser(description="Run the full eval set and report X/15.")
-    ap.add_argument("--model", default="gpt-4o")
+    ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--max-steps", type=int, default=30)
     ap.add_argument("--only", nargs="*", help="subset of issue ids")
+    ap.add_argument("--engine", choices=["solve", "graph"], default="solve",
+                    help="solve = hand-rolled loop (solve.py); graph = LangGraph (graph_solve.py)")
+    ap.add_argument("--manifest", default=None,
+                    help="manifest path (default eval/issues.yaml); use eval/issues_v2.yaml for the hard set")
     args = ap.parse_args()
 
     load_env()
-    doc, _, _ = load_manifest()
+    doc, _, _ = load_manifest(Path(args.manifest) if args.manifest else None)
     issues = doc["issues"]
     if args.only:
         issues = [i for i in issues if i["id"] in args.only]
 
+    runner = run_agent_graph if args.engine == "graph" else run_agent
     RUNS_DIR.mkdir(exist_ok=True)
-    report_path = ROOT / "sweep_report.json"
+    tag = Path(args.manifest).stem if args.manifest else "issues"
+    report_path = ROOT / f"sweep_report_{tag}_{args.model}_{args.engine}.json"  # manifest+model+engine qualified
     results = []
     t_start = time.time()
-    print(f"SWEEP: {len(issues)} issues | model={args.model} | max_steps={args.max_steps}\n", flush=True)
+    print(f"SWEEP: {len(issues)} issues | engine={args.engine} | model={args.model} | max_steps={args.max_steps}\n", flush=True)
 
     for n, issue in enumerate(issues, 1):
         iid = issue["id"]
         print(f"[{n}/{len(issues)}] {iid} ...", flush=True)
         t0 = time.time()
         try:
-            rec = run_agent(issue, args.model, args.max_steps, verbose=False)
+            rec = runner(issue, args.model, args.max_steps, False)
             v = rec["verdict"]
             row = {"id": iid, "resolved": v["resolved"], "exit": v["exit"],
                    "steps": rec["steps"], "stop_reason": rec["stop_reason"],
