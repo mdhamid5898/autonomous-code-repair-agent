@@ -1,0 +1,272 @@
+[
+  {
+    "id": "deepdiff-414",
+    "repo": "qlustered/deepdiff",
+    "issue": 414,
+    "clone": {
+      "ok": true,
+      "sha": "be22027e86ccb531164404fce7fc43a6633ac135",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.04s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "typeguard-489",
+    "repo": "agronholm/typeguard",
+    "issue": 489,
+    "clone": {
+      "ok": true,
+      "sha": "3e13fc282050336122e0ef7a44f53cd935ae368f",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "boltons-348",
+    "repo": "mahmoud/boltons",
+    "issue": 348,
+    "clone": {
+      "ok": true,
+      "sha": "46599bc0d498dd8adc3aea833ce1445feed349dd",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "2 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "arrow-1240",
+    "repo": "arrow-py/arrow",
+    "issue": 1240,
+    "clone": {
+      "ok": true,
+      "sha": "2224255c4acc594d734cef0bbc83360452a67983",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.03s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "arrow-1185",
+    "repo": "arrow-py/arrow",
+    "issue": 1185,
+    "clone": {
+      "ok": true,
+      "sha": "2224255c4acc594d734cef0bbc83360452a67983",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.03s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "voluptuous-529",
+    "repo": "alecthomas/voluptuous",
+    "issue": 529,
+    "clone": {
+      "ok": true,
+      "sha": "dcaaf3dd68be156253518a045feb1c4172dbd2d5",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.03s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "dateutil-1398",
+    "repo": "dateutil/dateutil",
+    "issue": 1398,
+    "clone": {
+      "ok": true,
+      "sha": "48bd1af97e71baf8e96fce5b663d589caac8f147",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "humanize-174",
+    "repo": "python-humanize/humanize",
+    "issue": 174,
+    "clone": {
+      "ok": true,
+      "sha": "6ab21b6fb2ceb774bafaeea5a15dec7582bba187",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed, 1 passed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "parse-223",
+    "repo": "r1chardj0n3s/parse",
+    "issue": 223,
+    "clone": {
+      "ok": true,
+      "sha": "738447715c76f8ebc460b33320307faccafbc599",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed, 1 passed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "inflect-222",
+    "repo": "jaraco/inflect",
+    "issue": 222,
+    "clone": {
+      "ok": true,
+      "sha": "262a247d2d99a47a520cdb2d46adb90df88b4326",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "2 failed in 0.99s"
+    },
+    "verdict": "READY",
+    "seconds": 1.2
+  },
+  {
+    "id": "yarl-984",
+    "repo": "aio-libs/yarl",
+    "issue": 984,
+    "clone": {
+      "ok": true,
+      "sha": "6362ff155ba02964a5e773927412f7cf4ca23cd1",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "2 failed in 0.03s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "boltons-393",
+    "repo": "mahmoud/boltons",
+    "issue": 393,
+    "clone": {
+      "ok": true,
+      "sha": "5aed99eb066f563fbad2231498492df8403a643d",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "marshmallow-2170",
+    "repo": "marshmallow-code/marshmallow",
+    "issue": 2170,
+    "clone": {
+      "ok": true,
+      "sha": "a578ed23092bd558acfbd9cd09a164108689326d",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "1 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "jmespath-318",
+    "repo": "jmespath/jmespath.py",
+    "issue": 318,
+    "clone": {
+      "ok": true,
+      "sha": "2812594e69d43098ef60f81f4efc404c071b0418",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "2 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  },
+  {
+    "id": "packaging-788",
+    "repo": "pypa/packaging",
+    "issue": 788,
+    "clone": {
+      "ok": true,
+      "sha": "85442b8032cb7bae72866dfd7782234a98dd2fb7",
+      "log": ""
+    },
+    "repro": {
+      "status": "REPRODUCED",
+      "verified": true,
+      "exit": 1,
+      "summary": "3 failed in 0.02s"
+    },
+    "verdict": "READY",
+    "seconds": 0.2
+  }
+]

@@ -1,0 +1,345 @@
+# =============================================================================
+# Mechanic — Eval Issue Manifest (v2)
+# =============================================================================
+# 15 medium-to-difficult bugs across 13 Python libraries.
+# Harder than v1: multi-file fixes, algorithmic edge cases, subtle state/ordering
+# bugs, numeric precision issues, and API-contract violations.
+#
+# All 15 issues were confirmed red-on-base with verify.py --manifest eval/issues_v2.yaml.
+# Do NOT modify eval/issues.yaml (v1 set) — this is a parallel set.
+# =============================================================================
+
+meta:
+  version: 2
+  total: 15
+  language: python
+  scoring: "patch makes failing test(s) pass without regressing the existing suite"
+  tiers:
+    medium: "localized logic fix; bug not immediately obvious from the traceback"
+    hard: "multi-function or multi-file fix; requires understanding broader algorithm"
+
+issues:
+  # ---- deepdiff ---------------------------------------------------------------
+- id: deepdiff-414
+  repo: qlustered/deepdiff
+  url: https://github.com/qlustered/deepdiff/issues/414
+  issue: 414
+  clone: https://github.com/seperman/deepdiff.git
+  base_commit: be22027e86ccb531164404fce7fc43a6633ac135
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "iterable_compare_func silently drops value changes when matched items
+    are reordered — diff returns {} instead of reporting inner list diffs"
+  repro: in_issue_body
+  fix_hint: "delta tracking for items found via iterable_compare_func does not propagate
+    inner diffs when items are also moved"
+  fix_size: medium
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- typeguard --------------------------------------------------------------
+- id: typeguard-489
+  repo: agronholm/typeguard
+  url: https://github.com/agronholm/typeguard/issues/489
+  issue: 489
+  clone: https://github.com/agronholm/typeguard.git
+  base_commit: 3e13fc282050336122e0ef7a44f53cd935ae368f
+  repro_verified: true
+  bug_type: exception
+  bug_summary: "@typechecked raises NameError at call-time when the decorated function
+    uses Literal type annotations and the module did `from typing import *`"
+  repro: in_issue_body
+  fix_hint: "annotation evaluation context for @typechecked does not include names
+    that were star-imported into the decorated function's module"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- boltons (LRU cache) ----------------------------------------------------
+- id: boltons-348
+  repo: mahmoud/boltons
+  url: https://github.com/mahmoud/boltons/issues/348
+  issue: 348
+  clone: https://github.com/mahmoud/boltons.git
+  base_commit: 46599bc0d498dd8adc3aea833ce1445feed349dd
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "LRU.values() and dict(lru) return stale values after a cached key
+    is updated in place — the internal linked-list node update is incomplete"
+  repro: in_issue_body
+  fix_hint: "LRU.__setitem__ updates the value in the node but the internal dict still
+    holds the old node reference; both pointers need updating"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- arrow (humanize) -------------------------------------------------------
+- id: arrow-1240
+  repo: arrow-py/arrow
+  url: https://github.com/arrow-py/arrow/issues/1240
+  issue: 1240
+  clone: https://github.com/arrow-py/arrow.git
+  base_commit: 2224255c4acc594d734cef0bbc83360452a67983
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "arrow.humanize() reports '16 days' as 'a month ago' instead of '2
+    weeks ago'; the threshold table cutoff for weeks vs. months is off by a week"
+  repro: in_issue_body
+  fix_hint: "THRESHOLDS in arrow/arrow.py uses 45 days as the weeks→month boundary
+    but 16 days falls into the month bucket; adjust the threshold"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- arrow (span_range) -----------------------------------------------------
+- id: arrow-1185
+  repo: arrow-py/arrow
+  url: https://github.com/arrow-py/arrow/issues/1185
+  issue: 1185
+  clone: https://github.com/arrow-py/arrow.git
+  base_commit: 2224255c4acc594d734cef0bbc83360452a67983
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "Arrow.span_range('month', …, exact=True) skips up to 3 days when the
+    start day-of-month doesn't exist in a later month (e.g. Jan 31 → March)"
+  repro: in_issue_body
+  fix_hint: "span_range advances the cursor by adding one month each iteration; when
+    the day-of-month clamps (Jan 31 + 1 month = Feb 28), the next span wrongly starts
+    from the clamped date + 1 month, skipping the missing days"
+  fix_size: medium
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- voluptuous -------------------------------------------------------------
+- id: voluptuous-529
+  repo: alecthomas/voluptuous
+  url: https://github.com/alecthomas/voluptuous/issues/529
+  issue: 529
+  clone: https://github.com/alecthomas/voluptuous.git
+  base_commit: dcaaf3dd68be156253518a045feb1c4172dbd2d5
+  repro_verified: true
+  bug_type: wrong-exception
+  bug_summary: "Schema with Required(Any('@id', 'id')) as a KEY and extra=REMOVE_EXTRA
+    raises MultipleInvalid for extra keys that should be silently removed"
+  repro: in_issue_body
+  fix_hint: "the key-validation path for Any() keys collects errors before REMOVE_EXTRA
+    has a chance to prune unknown keys; error collection order must respect the extra-handling
+    policy"
+  fix_size: medium
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- dateutil ---------------------------------------------------------------
+- id: dateutil-1398
+  repo: dateutil/dateutil
+  url: https://github.com/dateutil/dateutil/issues/1398
+  issue: 1398
+  clone: https://github.com/dateutil/dateutil.git
+  base_commit: 48bd1af97e71baf8e96fce5b663d589caac8f147
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "rrulestr FREQ=WEEKLY + WKST + BYSETPOS + out-of-calendar-order BYDAY
+    produces wrong dates; BYSETPOS indexes into the unordered BYDAY list instead of
+    the week-start-relative ordering"
+  repro: in_issue_body
+  fix_hint: "the weekly recurrence logic sorts BYDAY according to WKST when computing
+    occurrences, but this sort is not applied before BYSETPOS selection"
+  fix_size: medium
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- humanize ---------------------------------------------------------------
+- id: humanize-174
+  repo: python-humanize/humanize
+  url: https://github.com/python-humanize/humanize/issues/174
+  issue: 174
+  clone: https://github.com/python-humanize/humanize.git
+  base_commit: 6ab21b6fb2ceb774bafaeea5a15dec7582bba187
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "naturaldelta() always rounds DOWN to the nearest unit rather than
+    to the nearest unit; 90 s → 'a minute' instead of '2 minutes'"
+  repro: in_issue_body
+  fix_hint: "THRESHOLDS in humanize/time.py use integer-division / floor comparisons;
+    replace with proper rounding (midpoint goes to higher unit)"
+  fix_size: medium
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- parse ------------------------------------------------------------------
+- id: parse-223
+  repo: r1chardj0n3s/parse
+  url: https://github.com/r1chardj0n3s/parse/issues/223
+  issue: 223
+  clone: https://github.com/r1chardj0n3s/parse.git
+  base_commit: 738447715c76f8ebc460b33320307faccafbc599
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "parse loses microsecond precision: int(float('.501902') * 1e6) = 501901
+    due to floating-point rounding; correct answer is 501902"
+  repro: in_issue_body
+  fix_hint: "date_convert uses int(float('.' + u) * 1e6); fix by left-padding the
+    fraction string to 6 digits and converting directly: int(u.ljust(6,'0')[:6])"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- inflect ----------------------------------------------------------------
+- id: inflect-222
+  repo: jaraco/inflect
+  url: https://github.com/jaraco/inflect/issues/222
+  issue: 222
+  clone: https://github.com/jaraco/inflect.git
+  base_commit: 262a247d2d99a47a520cdb2d46adb90df88b4326
+  repro_verified: true
+  bug_type: exception
+  bug_summary: "p.singular_noun('pair of scissors') raises TypeError because the regex
+    match result for the 'pair of X' pattern is used without a None check"
+  repro: in_issue_body
+  fix_hint: "singular_noun() checks for IRREGULAR_PAIRS (e.g. 'pair of scissors')
+    but the regex match for the 'pair of …' idiom returns None for some phrases, causing
+    a subsequent .group() call to raise TypeError"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- yarl -------------------------------------------------------------------
+- id: yarl-984
+  repo: aio-libs/yarl
+  url: https://github.com/aio-libs/yarl/issues/984
+  issue: 984
+  clone: https://github.com/aio-libs/yarl.git
+  base_commit: 6362ff155ba02964a5e773927412f7cf4ca23cd1
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "yarl.URL('http://localhost') / 'path' / '' drops the trailing slash;
+    dividing by an empty string should preserve the slash sentinel"
+  repro: in_issue_body
+  fix_hint: "URL.__div__ normalises the path and strips empty segments; empty string
+    division should be treated as a trailing-slash request, not as a no-op"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "YARL_NO_EXTENSIONS=1 pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- boltons (research) -----------------------------------------------------
+- id: boltons-393
+  repo: mahmoud/boltons
+  url: https://github.com/mahmoud/boltons/issues/393
+  issue: 393
+  clone: https://github.com/mahmoud/boltons.git
+  base_commit: 5aed99eb066f563fbad2231498492df8403a643d
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "boltons.iterutils.research() silently skips branches whose values
+    are object-identical (CPython interns small tuples), because the underlying remap()
+    caches by object identity and never calls enter() for the second branch"
+  repro: in_issue_body
+  fix_hint: "remap() uses an identity cache to avoid revisiting objects; research()
+    must disable this cache so every branch is visited regardless of identity"
+  fix_size: small
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- marshmallow ------------------------------------------------------------
+- id: marshmallow-2170
+  repo: marshmallow-code/marshmallow
+  url: https://github.com/marshmallow-code/marshmallow/issues/2170
+  issue: 2170
+  clone: https://github.com/marshmallow-code/marshmallow.git
+  base_commit: a578ed23092bd558acfbd9cd09a164108689326d
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "@validates_schema raising ValidationError(msg, field_name='foo') puts
+    the error under the attribute name 'foo' rather than the data_key 'fooKey'; serialized
+    field names are not respected"
+  repro: in_issue_body
+  fix_hint: "Schema._run_validators() resolves the field_name argument to a path but
+    does not look up the field's data_key; add a data_key lookup before building the
+    error path"
+  fix_size: medium
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- jmespath ---------------------------------------------------------------
+- id: jmespath-318
+  repo: jmespath/jmespath.py
+  url: https://github.com/jmespath/jmespath.py/issues/318
+  issue: 318
+  clone: https://github.com/jmespath/jmespath.py.git
+  base_commit: 2812594e69d43098ef60f81f4efc404c071b0418
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "jmespath literal list/object expressions (`[]`, `{}`) share the same
+    Python object across calls because the compiled AST is cached without deep-copying
+    literal nodes; mutating one result corrupts all subsequent searches"
+  repro: in_issue_body
+  fix_hint: "LiteralExpression.visit() returns the literal value directly from the
+    AST node; it must return a deep copy so callers cannot mutate the cached AST"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- packaging --------------------------------------------------------------
+- id: packaging-788
+  repo: pypa/packaging
+  url: https://github.com/pypa/packaging/issues/788
+  issue: 788
+  clone: https://github.com/pypa/packaging.git
+  base_commit: 85442b8032cb7bae72866dfd7782234a98dd2fb7
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "Specifier('<3.0.0a8').contains('3.0.0a7') returns False even though
+    3.0.0a7 < 3.0.0a8; the pre-release guard in _compare_less_than incorrectly rejects
+    same-release prereleases"
+  repro: in_issue_body
+  fix_hint: "_compare_less_than checks `not spec.is_prerelease and prospective.is_prerelease
+    and base_version(prospective) == base_version(spec)`; this guard must also allow
+    prereleases that are strictly less than the spec's prerelease"
+  fix_size: medium
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
