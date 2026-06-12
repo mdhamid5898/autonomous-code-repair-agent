@@ -1,0 +1,341 @@
+# =============================================================================
+# Mechanic — Eval Issue Manifest (v1)
+# =============================================================================
+# Ground-truth benchmark for the autonomous code-repair agent.
+# 15 open, real GitHub issues across 10 small/medium Python libraries.
+#
+# REPRODUCIBILITY DISCIPLINE (read before using):
+#   1. base_commit MUST be pinned before any eval run. It is null until you run
+#      the setup/pin step, which clones each repo and records the default-branch
+#      HEAD SHA here. Pinning matters because the upstream bug may be fixed at any
+#      time; the eval must run against a frozen commit that still exhibits it.
+#   2. repro_verified MUST be flipped to true ONLY after you have personally run
+#      the failing test against base_commit and confirmed it FAILS. An issue can
+#      be "open" yet already silently patched on HEAD (we caught deepdiff #410
+#      doing exactly this). An unverified repro is not ground truth.
+#   3. Most issues ship a repro in the issue body but NOT a committed test.
+#      repro: in_issue_body  -> you author tests/test_mechanic_<id>.py from the body
+#      repro: existing_test  -> a test in the repo already covers it
+#   4. install/test_cmd are best-effort defaults for these repos. Verify each
+#      during setup; correct here if wrong. Do not trust them blind.
+#
+# resolution = patch makes the target failing test pass AND breaks no other test.
+# =============================================================================
+
+meta:
+  version: 1
+  total: 15
+  language: python
+  scoring: "patch makes failing test(s) pass without regressing the existing suite"
+  tiers: {easy: "isolated <20-line fix, deterministic test", medium: "localized but
+      multi-line or behavior-sensitive test"}
+
+issues:
+  # ---- freezegun (tz_offset family + bound-method family) -------------------
+- id: freezegun-348
+  repo: spulec/freezegun
+  url: https://github.com/spulec/freezegun/issues/348
+  issue: 348
+  clone: https://github.com/spulec/freezegun.git
+  base_commit: 92d61b3f5c31942a1039713574487bdcfcdbbfff
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "datetime.now(tz=...) double-shifts the timestamp when tz_offset is
+    set"
+  repro: in_issue_body
+  fix_hint: "tz_offset applied twice in the now()/tz path"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: 'pip install -e ".[tests]"'
+  test_cmd: "pytest -q"
+  flags: []
+
+- id: freezegun-472
+  repo: spulec/freezegun
+  url: https://github.com/spulec/freezegun/issues/472
+  issue: 472
+  clone: https://github.com/spulec/freezegun.git
+  base_commit: 92d61b3f5c31942a1039713574487bdcfcdbbfff
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "astimezone() returns wrong offset under tz_offset"
+  repro: in_issue_body
+  fix_hint: "astimezone conversion ignores configured tz_offset"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: 'pip install -e ".[tests]"'
+  test_cmd: "pytest -q"
+  flags: []
+
+- id: freezegun-553
+  repo: spulec/freezegun
+  url: https://github.com/spulec/freezegun/issues/553
+  issue: 553
+  clone: https://github.com/spulec/freezegun.git
+  base_commit: 92d61b3f5c31942a1039713574487bdcfcdbbfff
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "tz_offset incorrectly shifts tz-aware datetime.now(tz=...)"
+  repro: in_issue_body
+  fix_hint: "same family as #348; minimal repro with a baseline control"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: 'pip install -e ".[tests]"'
+  test_cmd: "pytest -q"
+  flags: ["same-family-as:freezegun-348"]
+
+- id: freezegun-382
+  repo: spulec/freezegun
+  url: https://github.com/spulec/freezegun/issues/382
+  issue: 382
+  clone: https://github.com/spulec/freezegun.git
+  base_commit: 92d61b3f5c31942a1039713574487bdcfcdbbfff
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "fake_time() rejects 1 arg; real time.time accepts self when bound
+    as a method"
+  repro: needs_authoring          # issue describes the TypeError, no committed snippet
+  fix_hint: "fake callable must accept the bound-method 'self' positional arg"
+  fix_size: small
+  tier: easy
+  test_framework: pytest
+  install: 'pip install -e ".[tests]"'
+  test_cmd: "pytest -q"
+  flags: ["no-repro-snippet"]
+
+- id: freezegun-558
+  repo: spulec/freezegun
+  url: https://github.com/spulec/freezegun/issues/558
+  issue: 558
+  clone: https://github.com/spulec/freezegun.git
+  base_commit: 92d61b3f5c31942a1039713574487bdcfcdbbfff
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "fake_perf_counter() same bound-method bug as #382 (TypeError: takes
+    0 positional args but 1 given)"
+  repro: in_issue_body
+  fix_hint: "same fix shape as #382, applied to perf_counter fake"
+  fix_size: small
+  tier: easy
+  test_framework: pytest
+  install: 'pip install -e ".[tests]"'
+  test_cmd: "pytest -q"
+  flags: ["same-family-as:freezegun-382", "open-pr-upstream:590"]
+
+  # ---- icecream (replaces astor-225: that bug is already patched at HEAD) ----
+- id: icecream-225
+  repo: gruns/icecream
+  url: https://github.com/gruns/icecream/issues/225
+  issue: 225
+  clone: https://github.com/gruns/icecream.git
+  base_commit: f5132deee6e921c4cfafacf762af6be66c26d516
+  repro_verified: true
+  bug_type: regression
+  bug_summary: "v2.2.0 guards colorama.init() behind sys.platform=='win', so on non-Windows
+    ANSI color codes leak into redirected (non-TTY) stderr that 2.1.4 stripped"
+  repro: in_issue_body
+  fix_hint: "icecream.py ~L85-95: colorama wrapping must apply on non-Windows too;
+    test captures stderr (non-TTY) and asserts no raw ANSI escape sequences"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["platform-sensitive-test", "regression-in-2.2.0"]
+
+  # ---- sortedcontainers -----------------------------------------------------
+- id: sortedcontainers-235
+  repo: grantjenks/python-sortedcontainers
+  url: https://github.com/grantjenks/python-sortedcontainers/issues/235
+  issue: 235
+  clone: https://github.com/grantjenks/python-sortedcontainers.git
+  base_commit: 3ac358631f58c1347f1d6d2d92784117db0f38ed
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "irange(minimum=, maximum=) params effectively swapped when key=neg"
+  repro: in_issue_body
+  fix_hint: "missing min/max swap when the key inverts ordering"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["maintainer-unconfirmed-as-bug", "repo-low-activity-since-2021"]
+
+  # ---- dictdiffer -----------------------------------------------------------
+- id: dictdiffer-187
+  repo: inveniosoftware/dictdiffer
+  url: https://github.com/inveniosoftware/dictdiffer/issues/187
+  issue: 187
+  clone: https://github.com/inveniosoftware/dictdiffer.git
+  base_commit: bfb5dd4e9f92ffad04788a67f25944fe078c083e
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "ignore={'b.bb'} honored on change but not on remove"
+  repro: in_issue_body            # failing asserts already written in the body
+  fix_hint: "ignore set not consulted on the remove path"
+  fix_size: small
+  tier: easy
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"            # repo also ships ./run-tests.sh
+  flags: ["repo-low-activity-2023"]
+
+- id: dictdiffer-182
+  repo: inveniosoftware/dictdiffer
+  url: https://github.com/inveniosoftware/dictdiffer/issues/182
+  issue: 182
+  clone: https://github.com/inveniosoftware/dictdiffer.git
+  base_commit: bfb5dd4e9f92ffad04788a67f25944fe078c083e
+  repro_verified: true
+  bug_type: off-by-one
+  bug_summary: "list head delete reported as a cascade of 'change' ops instead of
+    one 'remove'"
+  repro: in_issue_body
+  fix_hint: "list-diff alignment off by one on front deletion"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["repo-low-activity-2023"]
+
+  # ---- tabulate -------------------------------------------------------------
+- id: tabulate-428
+  repo: astanin/python-tabulate
+  url: https://github.com/astanin/python-tabulate/issues/428
+  issue: 428
+  clone: https://github.com/astanin/python-tabulate.git
+  base_commit: 268615a5c27dc40e5c22454c07b44d5c50410da0
+  repro_verified: true
+  bug_type: wrong-arg
+  bug_summary: "disable_numparse=True ignored when maxcolwidths is set (regression)"
+  repro: in_issue_body
+  fix_hint: "positional-arg mixup in the _type() call path"
+  fix_size: small
+  tier: easy
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["borderline-loc-3k", "open-pr-upstream:431"]
+
+- id: tabulate-354
+  repo: astanin/python-tabulate
+  url: https://github.com/astanin/python-tabulate/issues/354
+  issue: 354
+  clone: https://github.com/astanin/python-tabulate.git
+  base_commit: 268615a5c27dc40e5c22454c07b44d5c50410da0
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "maxcolwidths adds extra padding (column width double-counted)"
+  repro: in_issue_body
+  fix_hint: "width math counts padding twice"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["borderline-loc-3k"]
+
+  # ---- isodate --------------------------------------------------------------
+- id: isodate-44
+  repo: gweis/isodate
+  url: https://github.com/gweis/isodate/issues/44
+  issue: 44
+  clone: https://github.com/gweis/isodate.git
+  base_commit: 17cb25eb7bc3556a68f3f7b241313e9bb8b23760
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: 'parse_duration("P3M").total_seconds() returns 0.0 instead of raising/meaningful
+    value'
+  repro: in_issue_body
+  fix_hint: "silent 0.0 return where months/years cannot map to seconds; should raise"
+  fix_size: small
+  tier: easy
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- jsonpickle (replaces treelib-218: that bug is already patched at HEAD) -
+- id: jsonpickle-444
+  repo: jsonpickle/jsonpickle
+  url: https://github.com/jsonpickle/jsonpickle/issues/444
+  issue: 444
+  clone: https://github.com/jsonpickle/jsonpickle.git
+  base_commit: 196532ada4a4de387d78ae92b4b3fabfd38f8793
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "datetime.timedelta encodes to null under unpicklable=False: the reduce-based
+    encoding is gated behind `if self.unpicklable:` so it falls through to None"
+  repro: in_issue_body
+  fix_hint: "pickler.py ~L628: the reduce/__reduce__ encoding path is only taken when
+    self.unpicklable is True; should still emit a usable value when False"
+  fix_size: small
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["loc-over-3k-localized-fix"]
+
+  # ---- furl (NEW slot 14) ---------------------------------------------------
+- id: furl-163
+  repo: gruns/furl
+  url: https://github.com/gruns/furl/issues/163
+  issue: 163
+  clone: https://github.com/gruns/furl.git
+  base_commit: 46d9ea79c98bb14b970a199fb924705d024f29ad
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "netloc with multiple '@' parsed at first '@' instead of last"
+  repro: in_issue_body
+  fix_hint: "netloc setter uses split('@', 1); should be rsplit('@', 1)"
+  fix_size: trivial              # ~1 line
+  tier: easy
+  test_framework: pytest          # unittest, pytest-runnable
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: ["best-eval-shape"]
+
+  # ---- python-slugify (NEW slot 15) -----------------------------------------
+- id: python-slugify-175
+  repo: un33k/python-slugify
+  url: https://github.com/un33k/python-slugify/issues/175
+  issue: 175
+  clone: https://github.com/un33k/python-slugify.git
+  base_commit: 7b6d5d96c1995e6dccb39a19a13ba78d7d0a3ee4
+  repro_verified: true
+  bug_type: missing-branch
+  bug_summary: "CLI parses --regex-pattern but slugify_params() never forwards it
+    to slugify()"
+  repro: existing_test            # repo's test.py covers slugify args; CLI repro is trivial
+  fix_hint: "add regex_pattern to the params dict in slugify_params() in slugify/__main__.py"
+  fix_size: trivial              # ~1-3 lines
+  tier: easy
+  test_framework: pytest          # unittest test.py, pytest-runnable
+  install: "pip install -e ."
+  test_cmd: "pytest -q test.py"
+  flags: []
+
+# -----------------------------------------------------------------------------
+# Alternates (swap in if any KEEP above fails repro verification on its base):
+#   (gruns/icecream#225 was promoted into the active set, replacing astor-225)
+# Hard-tier candidates (bust the <3k LOC cap, but bugs are LOCALIZED — promote
+# these once the easy set passes, to stress the retrieval/localization layer):
+#   - seperman/deepdiff#414     ~9.7k LOC, fix in diff.py ~L889
+#   - agronholm/typeguard#489   ~4k LOC, fix in _transformer.py (open PR #549)
+#   (jsonpickle/jsonpickle#444 was promoted into the active set, replacing treelib-218)
+# Dropped:
+#   - astanin/python-tabulate#339   closed (likely fixed in a later release)
+#   - python-humanize/humanize#270  i18n feature gap, not a code logic bug
+#   - spulec/freezegun#513          stdlib today() behavior, no clean repro (not a bug)
+#   - berkerpeksag/astor#225        already patched at HEAD (BUG_ABSENT); fix tangled
+#                                   with a "fix 6 source-gen bugs" commit, no clean
+#                                   pre-fix pin -> replaced by gruns/icecream#225
+#   - caesar0301/treelib#218        already patched at HEAD (BUG_ABSENT); str-return +
+#                                   stdout= param came in a big poetry-migration refactor
+#                                   (57d2065), no clean pre-fix pin -> replaced by jsonpickle#444
+# -----------------------------------------------------------------------------

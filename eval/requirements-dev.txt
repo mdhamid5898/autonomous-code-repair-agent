@@ -1,0 +1,4 @@
+# Harness deps for eval/verify.py (the host process, not the per-issue venvs).
+# pytest is installed automatically into each per-issue venv by verify.py.
+ruamel.yaml   # lets verify.py pin base_commit / repro_verified back into issues.yaml (comments preserved)
+pyyaml        # read-only fallback if ruamel is absent
