@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
 """
-Phase 4 — multi-agent split (Planner / Localizer / Coder / Tester / Reviewer).
+Phase 4 — multi-agent split (Planner / Coder / Tester / Reviewer).
 
-The single generalist agent from solve.py/graph_solve.py is decomposed into five
+The single generalist agent from solve.py/graph_solve.py is decomposed into
 specialists coordinated by a LangGraph graph, with a bounded re-plan loop:
 
-    START → Planner → Localizer → Coder → Tester → Reviewer
-            (hypothesis  (find the   (apply    (run repro   accept → END (resolved)
-             + strategy)  buggy code)  the fix)  — no LLM)   revise → Coder (with feedback)
-              ▲                                              escalate → END (failed)
-              └──────────────── bounded by --max-iterations ─┘  (loop is Coder↔Tester↔Reviewer)
+    START → Planner → Coder → Tester → Reviewer
+            (hypothesis  (localize  (run repro   accept → END (resolved)
+             + files +    + fix)     — no LLM)    revise → Coder (with feedback)
+             strategy)                            escalate → END (failed)
+              ▲
+              └──────────── bounded by --max-iterations ────┘  (loop is Coder↔Tester↔Reviewer)
 
 Roles:
   - Planner   : 1 LLM call. issue + test + file list → {hypothesis, candidate_files, strategy}.
-  - Localizer : short read-only bash loop → {target_file, target_symbol, key_lines}.
-  - Coder     : short bash + str_replace loop → applies the fix, returns a summary.
+  - Coder     : short bash + str_replace loop → localizes (from the Planner's candidate
+                files) AND applies the fix, returns a summary.
   - Tester    : DETERMINISTIC (no LLM) — runs the pristine repro via solve.grade().
   - Reviewer  : 1 LLM call on failure → decide revise (with feedback) or escalate.
                 (accept is automatic when the Tester is green.)
+
+NOTE: a separate Localizer node was REMOVED (folded into the Coder). The v2 head-to-head
+showed multi-agent REGRESSED vs single-agent (47% vs 87%), and across every Phase-4 trace
+the Localizer burned its full read-only budget without ever calling report_localization —
+the Coder re-localized anyway. Localization was never the bottleneck (committing an edit
+was). It returns as a real, retrieval-backed node in Phase 5.
 
 Reuses solve.py verbatim for the Executor, tools, dispatch, and grader — only the
 orchestration is new. Measure against the SINGLE-agent baseline on the SAME model.
@@ -63,15 +70,6 @@ PLAN_TOOL = {"type": "function", "function": {
         "strategy": {"type": "string", "description": "how to fix it, briefly"}},
         "required": ["hypothesis", "candidate_files", "strategy"]}}}
 
-LOCALIZE_TOOL = {"type": "function", "function": {
-    "name": "report_localization",
-    "description": "Report exactly where the bug lives, once found.",
-    "parameters": {"type": "object", "properties": {
-        "target_file": {"type": "string", "description": "repo-relative file to edit"},
-        "target_symbol": {"type": "string", "description": "function/method/class with the bug"},
-        "key_lines": {"type": "string", "description": "the buggy code lines, verbatim"}},
-        "required": ["target_file", "target_symbol", "key_lines"]}}}
-
 EDIT_DONE_TOOL = {"type": "function", "function": {
     "name": "finish_edit",
     "description": "Call once the fix has been applied via str_replace.",
@@ -96,7 +94,6 @@ class MultiAgentState(TypedDict):
     issue: dict
     test_name: str
     plan: Optional[dict]
-    localization: Optional[dict]
     last_edit: Optional[str]
     test_result: Optional[dict]
     review: Optional[dict]
@@ -200,43 +197,28 @@ def build_graph(ex, client, model: str, verbose: bool):
                             "strategy. Call submit_plan.", user, PLAN_TOOL, verbose) or {}
         if verbose:
             print(f"[Planner] files={plan.get('candidate_files')} :: {str(plan.get('hypothesis'))[:80]}")
-        return {"plan": plan, "status": "localizing",
+        return {"plan": plan, "status": "coding",
                 "decision_log": log(state, "planner", plan.get("hypothesis", ""))}
 
-    def localizer_node(state: MultiAgentState) -> dict:
-        plan = state["plan"] or {}
-        user = (f"{issue_brief(state['issue'])}\n\nPlan hypothesis: {plan.get('hypothesis')}\n"
-                f"Candidate files: {plan.get('candidate_files')}\n\n"
-                "Confirm exactly where the bug is. Use bash (grep/cat/ls) — READ ONLY, no edits. "
-                "Then call report_localization.")
-        loc = _run_specialist(client, model,
-                              "You are the Localizer. Pinpoint the buggy file and function using "
-                              "read-only bash. Commands run from the repo root — use repo-relative "
-                              "paths, never cd, don't search outside the repo. Never edit. "
-                              "Finish with report_localization.",
-                              user, [_BASH, LOCALIZE_TOOL], "report_localization", ex, verbose,
-                              "Localizer", state["transcript"]) or {}
-        if verbose:
-            print(f"[Localizer] -> {loc.get('target_file')}::{loc.get('target_symbol')}")
-        return {"localization": loc, "status": "coding",
-                "decision_log": log(state, "localizer", f"{loc.get('target_file')}::{loc.get('target_symbol')}")}
-
     def coder_node(state: MultiAgentState) -> dict:
-        plan, loc = state["plan"] or {}, state["localization"] or {}
+        plan = state["plan"] or {}
         feedback = ""
         if state["review"] and state["review"].get("decision") == "revise":
             tr = state["test_result"] or {}
             feedback = (f"\n\nThis is retry #{state['iteration']}. Your previous fix FAILED the test:\n"
                         f"{tr.get('summary')}\nReviewer feedback: {state['review'].get('feedback')}\n"
                         "Try a different fix.")
-        user = (f"{issue_brief(state['issue'])}\n\nPlan: {plan.get('strategy')}\n"
-                f"Target: {loc.get('target_file')} :: {loc.get('target_symbol')}\n"
-                f"Buggy lines:\n{loc.get('key_lines')}{feedback}\n\n"
-                "Apply the smallest correct fix to the SOURCE with str_replace (cat the file first "
+        user = (f"{issue_brief(state['issue'])}\n\nHypothesis: {plan.get('hypothesis')}\n"
+                f"Strategy: {plan.get('strategy')}\n"
+                f"Candidate files (from the Planner — confirm with bash before editing):\n"
+                f"{plan.get('candidate_files')}{feedback}\n\n"
+                "Localize the bug with read-only bash (grep/cat) starting from the candidate files, "
+                "then apply the smallest correct fix to the SOURCE with str_replace (cat the file first "
                 "to get exact strings). NEVER edit the test. Do NOT run the test. Finish with finish_edit.")
         res = _run_specialist(client, model,
-                              "You are the Coder. Apply a minimal, correct source fix via str_replace. "
-                              "Commands run from the repo root (repo-relative paths, never cd). "
+                              "You are the Coder. First localize the bug with read-only bash using the "
+                              "Planner's candidate files, then apply a minimal, correct source fix via "
+                              "str_replace. Commands run from the repo root (repo-relative paths, never cd). "
                               "Never touch the test file; don't run tests (the Tester does). "
                               "Finish with finish_edit.",
                               user, [_BASH, _STR_REPLACE, EDIT_DONE_TOOL], "finish_edit", ex, verbose,
@@ -285,12 +267,11 @@ def build_graph(ex, client, model: str, verbose: bool):
         return {"accept": "end", "escalate": "end"}.get(state["review"]["decision"], "coder")
 
     g = StateGraph(MultiAgentState)
-    for name, fn in [("planner", planner_node), ("localizer", localizer_node),
-                     ("coder", coder_node), ("tester", tester_node), ("reviewer", reviewer_node)]:
+    for name, fn in [("planner", planner_node), ("coder", coder_node),
+                     ("tester", tester_node), ("reviewer", reviewer_node)]:
         g.add_node(name, fn)
     g.add_edge(START, "planner")
-    g.add_edge("planner", "localizer")
-    g.add_edge("localizer", "coder")
+    g.add_edge("planner", "coder")
     g.add_edge("coder", "tester")
     g.add_edge("tester", "reviewer")
     g.add_conditional_edges("reviewer", route_after_reviewer, {"coder": "coder", "end": END})
@@ -311,7 +292,7 @@ def run_multi_agent(issue: dict, model: str, max_iterations: int, verbose: bool,
     graph = build_graph(ex, client, model, verbose)
 
     init: MultiAgentState = {
-        "issue": issue, "test_name": test_name, "plan": None, "localization": None,
+        "issue": issue, "test_name": test_name, "plan": None,
         "last_edit": None, "test_result": None, "review": None, "iteration": 1,
         "max_iterations": max_iterations, "status": "planning", "decision_log": [], "transcript": [],
     }
@@ -324,13 +305,13 @@ def run_multi_agent(issue: dict, model: str, max_iterations: int, verbose: bool,
     return {
         "issue": iid, "model": model, "engine": "multi-agent", "sandbox": sandbox,
         "iterations": final["iteration"], "status": final["status"], "verdict": v,
-        "plan": final["plan"], "localization": final["localization"],
+        "plan": final["plan"],
         "decision_log": final["decision_log"], "tool_trace": final["transcript"],
     }
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Phase 4: fix one eval issue with a 5-agent LangGraph pipeline.")
+    ap = argparse.ArgumentParser(description="Phase 4: fix one eval issue with a multi-agent LangGraph pipeline.")
     ap.add_argument("--issue", required=True)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--max-iterations", type=int, default=MAX_ITERATIONS)
