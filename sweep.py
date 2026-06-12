@@ -12,9 +12,11 @@ GPT-4o is non-deterministic (we saw freezegun-553 thrash on one run, nail it on
 another), so one sweep is a NOISY point estimate; pass@k is the honest follow-up.
 
 Usage:
-  .venv/bin/python sweep.py                       # all 15
+  .venv/bin/python sweep.py                       # all 15 (v1)
   .venv/bin/python sweep.py --only furl-163 isodate-44
   .venv/bin/python sweep.py --model gpt-4o --max-steps 30
+  .venv/bin/python sweep.py --manifest eval/issues_v2.yaml --engine solve   # single-agent, hard set
+  .venv/bin/python sweep.py --manifest eval/issues_v2.yaml --engine multi    # multi-agent, hard set
 """
 from __future__ import annotations
 
@@ -30,16 +32,26 @@ sys.path.insert(0, str(ROOT / "eval"))
 
 from solve import run_agent, load_env, RUNS_DIR, DEFAULT_MODEL  # noqa: E402
 from graph_solve import run_agent_graph  # noqa: E402
+from multi_agent import run_multi_agent, MAX_ITERATIONS  # noqa: E402
 from verify import load_manifest  # noqa: E402
+
+
+def _engine_path(rec: dict) -> str:
+    """Compact summary for engines without a submit() (multi-agent): the node path."""
+    return " → ".join(d["node"] for d in rec.get("decision_log", []))
 
 
 def main():
     ap = argparse.ArgumentParser(description="Run the full eval set and report X/15.")
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--max-steps", type=int, default=30)
+    ap.add_argument("--max-steps", type=int, default=30,
+                    help="per-issue tool-step cap for solve/graph")
+    ap.add_argument("--max-iterations", type=int, default=MAX_ITERATIONS,
+                    help="Coder↔Tester↔Reviewer re-plan rounds for the multi engine")
     ap.add_argument("--only", nargs="*", help="subset of issue ids")
-    ap.add_argument("--engine", choices=["solve", "graph"], default="solve",
-                    help="solve = hand-rolled loop (solve.py); graph = LangGraph (graph_solve.py)")
+    ap.add_argument("--engine", choices=["solve", "graph", "multi"], default="solve",
+                    help="solve = hand-rolled loop (solve.py); graph = LangGraph (graph_solve.py); "
+                         "multi = 5-role multi-agent pipeline (multi_agent.py)")
     ap.add_argument("--manifest", default=None,
                     help="manifest path (default eval/issues.yaml); use eval/issues_v2.yaml for the hard set")
     args = ap.parse_args()
@@ -50,24 +62,31 @@ def main():
     if args.only:
         issues = [i for i in issues if i["id"] in args.only]
 
-    runner = run_agent_graph if args.engine == "graph" else run_agent
+    runner = {"graph": run_agent_graph, "multi": run_multi_agent}.get(args.engine, run_agent)
+    # solve/graph are bounded by tool-steps; multi by re-plan iterations (its own budget).
+    budget = args.max_iterations if args.engine == "multi" else args.max_steps
     RUNS_DIR.mkdir(exist_ok=True)
     tag = Path(args.manifest).stem if args.manifest else "issues"
     report_path = ROOT / f"sweep_report_{tag}_{args.model}_{args.engine}.json"  # manifest+model+engine qualified
     results = []
     t_start = time.time()
-    print(f"SWEEP: {len(issues)} issues | engine={args.engine} | model={args.model} | max_steps={args.max_steps}\n", flush=True)
+    budget_kind = "max_iterations" if args.engine == "multi" else "max_steps"
+    print(f"SWEEP: {len(issues)} issues | engine={args.engine} | model={args.model} | {budget_kind}={budget}\n", flush=True)
 
     for n, issue in enumerate(issues, 1):
         iid = issue["id"]
         print(f"[{n}/{len(issues)}] {iid} ...", flush=True)
         t0 = time.time()
         try:
-            rec = runner(issue, args.model, args.max_steps, False)
+            rec = runner(issue, args.model, budget, False)
             v = rec["verdict"]
+            # normalize across engines: solve/graph report steps/stop_reason/submitted_summary;
+            # multi reports iterations/status/decision_log instead.
             row = {"id": iid, "resolved": v["resolved"], "exit": v["exit"],
-                   "steps": rec["steps"], "stop_reason": rec["stop_reason"],
-                   "repro": v["summary"], "submitted": rec["submitted_summary"],
+                   "steps": rec.get("steps", rec.get("iterations")),
+                   "stop_reason": rec.get("stop_reason") or rec.get("status"),
+                   "repro": v["summary"],
+                   "submitted": rec.get("submitted_summary") or _engine_path(rec),
                    "seconds": round(time.time() - t0, 1)}
             (RUNS_DIR / f"{iid}_{int(t0)}.json").write_text(json.dumps(rec, indent=2, default=str))
         except (Exception, SystemExit) as e:  # one issue must never kill the sweep
