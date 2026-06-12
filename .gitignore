@@ -6,13 +6,15 @@
 
 # agent run traces + generated run records
 runs/
-sweep_report.json
+sweep_report*.json
 
-# internal docs — not part of the public project.
-# (PRD will be cleaned up and added when the repo goes public.)
+# internal docs & local project "brain" — NOT committed (repo stays code-only + README).
+# Kept on disk for Claude Code (auto-loads CLAUDE.md) and same-machine Cursor.
 PRD_Autonomous_Code_Repair_Agent.md
 HANDOFF.md
 .handoff/
+CLAUDE.md
+memory/
 
 # local tooling / OS cruft
 .claude/

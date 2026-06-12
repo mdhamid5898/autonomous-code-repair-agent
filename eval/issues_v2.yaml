@@ -21,8 +21,8 @@ meta:
 issues:
   # ---- deepdiff ---------------------------------------------------------------
 - id: deepdiff-414
-  repo: qlustered/deepdiff
-  url: https://github.com/qlustered/deepdiff/issues/414
+  repo: seperman/deepdiff
+  url: https://github.com/seperman/deepdiff/issues/414
   issue: 414
   clone: https://github.com/seperman/deepdiff.git
   base_commit: be22027e86ccb531164404fce7fc43a6633ac135
