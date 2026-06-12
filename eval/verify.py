@@ -37,10 +37,13 @@ import time
 from pathlib import Path
 
 EVAL_DIR = Path(__file__).resolve().parent
-MANIFEST = EVAL_DIR / "issues.yaml"
+_DEFAULT_MANIFEST = EVAL_DIR / "issues.yaml"
 REPOS_DIR = EVAL_DIR / ".repos"
 REPROS_DIR = EVAL_DIR / "repros"
 REPORT = EVAL_DIR / "setup_report.json"
+
+# Resolved at parse time from --manifest; set in main() before any step runs.
+MANIFEST: Path = _DEFAULT_MANIFEST
 
 INSTALL_TIMEOUT = 600
 SUITE_TIMEOUT = 300
@@ -79,15 +82,16 @@ def tail(text: str, n: int = 25) -> str:
     return "\n".join(lines[-n:])
 
 
-def load_manifest():
+def load_manifest(manifest_path: Path | None = None):
     """Returns (data, doc_or_None, ruamel_yaml_or_None). doc is the round-trip
     object used to write base_commit back with comments preserved."""
+    path = manifest_path or MANIFEST
     try:
         from ruamel.yaml import YAML
 
         yaml = YAML()
         yaml.preserve_quotes = True
-        with MANIFEST.open() as f:
+        with path.open() as f:
             doc = yaml.load(f)
         return doc, doc, yaml
     except ImportError:
@@ -99,7 +103,7 @@ def load_manifest():
                 "  pip install ruamel.yaml   (preferred — lets the script pin base_commit back into issues.yaml)\n"
                 "  pip install pyyaml        (read-only; SHAs will live only in setup_report.json)"
             )
-        with MANIFEST.open() as f:
+        with path.open() as f:
             data = pyyaml.safe_load(f)
         return data, None, None
 
@@ -302,8 +306,9 @@ def process(issue, args) -> dict:
     return rec
 
 
-def backfill_pins(doc, yaml, results: dict):
-    """Write base_commit back into issues.yaml, comments preserved."""
+def backfill_pins(doc, yaml, results: dict, manifest_path: Path | None = None):
+    """Write base_commit back into the manifest, comments preserved."""
+    path = manifest_path or MANIFEST
     if doc is None or yaml is None:
         print("\n(ruamel.yaml not installed — base_commit NOT written back; SHAs are in setup_report.json)")
         return
@@ -323,9 +328,9 @@ def backfill_pins(doc, yaml, results: dict):
                 issue["repro_verified"] = v
                 changed += 1
     if changed:
-        with MANIFEST.open("w") as f:
+        with path.open("w") as f:
             yaml.dump(doc, f)
-        print(f"\nUpdated {changed} field(s) in {MANIFEST.name} (base_commit / repro_verified)")
+        print(f"\nUpdated {changed} field(s) in {path.name} (base_commit / repro_verified)")
 
 
 def print_table(records: list[dict]):
@@ -348,6 +353,8 @@ def print_table(records: list[dict]):
 
 def main():
     ap = argparse.ArgumentParser(description="Pin, install, and repro-verify the eval issue set.")
+    ap.add_argument("--manifest", default=None,
+                    help="path to the issues manifest YAML (default: eval/issues.yaml)")
     ap.add_argument("--only", help="run a single issue id (e.g. furl-163)")
     ap.add_argument("--no-install", action="store_true", help="clone + pin SHAs only")
     ap.add_argument("--no-repro", action="store_true", help="skip the repro-verification step")
@@ -359,13 +366,21 @@ def main():
     if not which("git"):
         sys.exit("git not found on PATH.")
 
-    doc, rt_doc, yaml = load_manifest()
+    manifest_path = Path(args.manifest).resolve() if args.manifest else _DEFAULT_MANIFEST
+    if not manifest_path.exists():
+        sys.exit(f"Manifest not found: {manifest_path}")
+
+    # Derive a per-manifest report file so v2 runs don't clobber the v1 report.
+    report_path = EVAL_DIR / f"setup_report_{manifest_path.stem}.json"
+
+    doc, rt_doc, yaml = load_manifest(manifest_path)
     issues = doc["issues"]
     if args.only:
         issues = [i for i in issues if i["id"] == args.only]
         if not issues:
             sys.exit(f"No issue with id '{args.only}'.")
 
+    print(f"Manifest: {manifest_path.relative_to(EVAL_DIR.parent)}")
     print(f"Processing {len(issues)} issue(s). uv={'yes' if which('uv') else 'no'}  "
           f"clones -> {REPOS_DIR.relative_to(EVAL_DIR.parent)}/")
 
@@ -377,10 +392,10 @@ def main():
         results[issue["id"]] = rec
         print(f"  {rec['verdict']}  ({rec['seconds']}s)")
 
-    backfill_pins(rt_doc, yaml, results)
+    backfill_pins(rt_doc, yaml, results, manifest_path)
 
-    REPORT.write_text(json.dumps(records, indent=2))
-    print(f"\nFull report -> {REPORT.relative_to(EVAL_DIR.parent)}")
+    report_path.write_text(json.dumps(records, indent=2))
+    print(f"\nFull report -> {report_path.relative_to(EVAL_DIR.parent)}")
     print_table(records)
 
 
