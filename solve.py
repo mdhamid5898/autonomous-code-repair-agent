@@ -359,7 +359,13 @@ def _chat_with_backoff(client, model, messages, verbose, attempts=6):
     return None
 
 
-def run_agent(issue: dict, model: str, max_steps: int, verbose: bool, sandbox: str = "local") -> dict:
+def run_agent(issue: dict, model: str, max_steps: int, verbose: bool, sandbox: str = "local",
+              governed: bool = False) -> dict:
+    """Single-agent repair loop. If governed=True, `submit` is TEST-GATED: a submit is
+    accepted only if the pristine repro actually passes; otherwise it's rejected and the
+    agent must keep fixing (no premature wrong-submit, forced retry). This ports the
+    multi-agent's Tester→Reviewer governance onto the single agent, to isolate whether
+    multi's edge is that control loop vs. the decomposition itself."""
     try:
         from openai import OpenAI  # noqa: F401 — make_client imports it
     except ImportError:
@@ -412,14 +418,25 @@ def run_agent(issue: dict, model: str, max_steps: int, verbose: bool, sandbox: s
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result = dispatch(ex, name, args)
+            if governed and name == "submit":
+                # test-gated submit: accept only if the pristine repro actually passes;
+                # else reject and force the agent to keep fixing (no premature wrong-submit).
+                gv = grade(issue, repo_dir, ex)
+                if gv["resolved"]:
+                    result = "ACCEPTED — the repro passes. Done."
+                    submitted = args.get("summary", "")
+                else:
+                    result = (f"REJECTED — the repro still FAILS, you are not done:\n{gv['log']}\n"
+                              "Keep editing the SOURCE and re-run the test; submit only once it passes.")
+            else:
+                result = dispatch(ex, name, args)
+                if name == "submit":
+                    submitted = args.get("summary", "")
             preview = (args.get("cmd") or args.get("path") or args.get("summary") or "")
             if verbose:
                 print(f"[{steps}] {name}({str(preview)[:80]}) -> {result.splitlines()[0][:80] if result else ''}")
             trace.append({"step": steps, "tool": name, "args": args, "result": result})
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            if name == "submit":
-                submitted = args.get("summary", "")
         if submitted is not None:
             stop_reason = "submitted"
             break

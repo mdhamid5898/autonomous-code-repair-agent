@@ -49,9 +49,10 @@ def main():
     ap.add_argument("--max-iterations", type=int, default=MAX_ITERATIONS,
                     help="Coder↔Tester↔Reviewer re-plan rounds for the multi engine")
     ap.add_argument("--only", nargs="*", help="subset of issue ids")
-    ap.add_argument("--engine", choices=["solve", "graph", "multi"], default="solve",
+    ap.add_argument("--engine", choices=["solve", "graph", "multi", "governed"], default="solve",
                     help="solve = hand-rolled loop (solve.py); graph = LangGraph (graph_solve.py); "
-                         "multi = 5-role multi-agent pipeline (multi_agent.py)")
+                         "multi = multi-agent pipeline (multi_agent.py); governed = single agent with "
+                         "test-gated submit (multi's governance ported onto one agent, for the iso-control test)")
     ap.add_argument("--manifest", default=None,
                     help="manifest path (default eval/issues.yaml); use eval/issues_v2.yaml for the hard set")
     args = ap.parse_args()
@@ -62,8 +63,9 @@ def main():
     if args.only:
         issues = [i for i in issues if i["id"] in args.only]
 
-    runner = {"graph": run_agent_graph, "multi": run_multi_agent}.get(args.engine, run_agent)
-    # solve/graph are bounded by tool-steps; multi by re-plan iterations (its own budget).
+    runner = {"graph": run_agent_graph, "multi": run_multi_agent,
+              "governed": lambda i, m, b, v: run_agent(i, m, b, v, governed=True)}.get(args.engine, run_agent)
+    # solve/graph/governed are bounded by tool-steps; multi by re-plan iterations (its own budget).
     budget = args.max_iterations if args.engine == "multi" else args.max_steps
     RUNS_DIR.mkdir(exist_ok=True)
     tag = Path(args.manifest).stem if args.manifest else "issues"
