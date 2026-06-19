@@ -1,0 +1,280 @@
+# =============================================================================
+# Mechanic — Eval Issue Manifest (v3)
+# =============================================================================
+# Multi-file bugs in mid-size real-world repos.
+# Key differentiator from v1/v2: every fix spans ≥2 Python source files,
+# rewarding the multi-agent pipeline's Planner+Coder decomposition.
+#
+# All issues confirmed red-on-base with verify.py --manifest eval/issues_v3.yaml.
+# fix_files: lists the SOURCE (non-test) files touched by the merged fix PR.
+# =============================================================================
+
+meta:
+  version: 3
+  total: 10
+  language: python
+  scoring: "patch makes failing test(s) pass without regressing the existing suite"
+  tiers:
+    medium: "multi-file fix; bug not immediately obvious from the traceback"
+    hard: "multi-file fix spanning ≥3 source files; requires understanding the full
+      subsystem"
+
+issues:
+  # ---- flask (teardown) -------------------------------------------------------
+- id: flask-5928
+  repo: pallets/flask
+  url: https://github.com/pallets/flask/pull/5928
+  issue: 5928
+  clone: https://github.com/pallets/flask.git
+  base_commit: 7b0088693ece1bd3a9238a6fdf56ed8df7a4d43b
+  repro_verified: true
+  bug_type: missing-behavior
+  bug_summary: "teardown callbacks registered with @teardown_appcontext or @teardown_request
+    stop being called once any single callback raises; all subsequent callbacks in
+    the list are silently skipped, and signals are never emitted"
+  repro: adapted_from_pr_tests
+  fix_hint: "do_teardown_appcontext and do_teardown_request iterate teardown functions
+    with a bare call (no try/except), so the first exception aborts the loop; wrap
+    each call in a context manager that collects errors and re-raises after all callbacks
+    finish (new _CollectErrors helper in helpers.py used by both app.py and ctx.py)"
+  fix_size: medium
+  fix_files: [src/flask/app.py, src/flask/ctx.py, src/flask/helpers.py]
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- rich (soft-wrap background) -------------------------------------------
+- id: rich-3838
+  repo: Textualize/rich
+  url: https://github.com/Textualize/rich/issues/3838
+  issue: 3838
+  clone: https://github.com/Textualize/rich.git
+  base_commit: 05ff970926cbd0b5d0acb6fc18cdbd1fc971e582
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "Console.print() with soft_wrap=True and a background-color style includes
+    the background ANSI code in the newline sequence, causing the background to 'bleed'
+    past the last character and into the next line's reset"
+  repro: from_issue_body
+  fix_hint: "console._render_buffer applies style to the raw segment stream via Segment.apply_style();
+    when soft_wrap is True the newline segment is also styled; fix is to split the
+    stream line-by-line first (new Segment.split_lines_terminator in segment.py) then
+    apply style per line in console.py, emitting a plain newline outside the styled
+    region"
+  fix_size: medium
+  fix_files: [rich/console.py, rich/segment.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- werkzeug (duplicate rule check) ----------------------------------------
+- id: werkzeug-3038
+  repo: pallets/werkzeug
+  url: https://github.com/pallets/werkzeug/pull/3109
+  issue: 3038
+  clone: https://github.com/pallets/werkzeug.git
+  base_commit: bf7529e62685e0b87350481703ddae5b6351072d
+  repro_verified: true
+  bug_type: wrong-behavior
+  bug_summary: "StateMachineMatcher._check_rule uses Rule.__eq__ to detect duplicate
+    routes, but Rule.__eq__ only compares path structure (_parts) and ignores HTTP
+    methods; GET and POST routes to the same path are therefore treated as duplicates
+    and raise DuplicateRuleError, breaking standard REST resource routing"
+  repro: from_issue_body
+  fix_hint: "introduce Rule.is_duplicate(other) in rules.py that intersects the rule's
+    methods (excluding HEAD/OPTIONS) to detect true duplicates; switch matcher.py's
+    _check_rule to call is_duplicate() instead of __eq__; update exceptions.py str()
+    for clearer messaging"
+  fix_size: medium
+  fix_files: [src/werkzeug/routing/rules.py, src/werkzeug/routing/matcher.py, 
+      src/werkzeug/routing/exceptions.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- jinja2 (namespace tuple assignment) ------------------------------------
+- id: jinja2-1664
+  repo: pallets/jinja
+  url: https://github.com/pallets/jinja/pull/1664
+  issue: 1664
+  clone: https://github.com/pallets/jinja.git
+  base_commit: 1d55cddbb28e433779511f28f13a2d8c4ec45826
+  repro_verified: true
+  bug_type: missing-feature
+  bug_summary: "Jinja2 namespace tuple assignment ({% set ns.x, ns.y = 1, 2 %}) raises
+    TemplateSyntaxError because the parser's with_namespace branch is an early-exit
+    that returns before reaching the tuple-parsing logic; the compiler is also not
+    prepared to emit code for multiple NSRef targets in one Assign node"
+  repro: from_pr_description
+  fix_hint: "refactor parser.py so the namespace branch falls through to the general
+    tuple / primary-expression path instead of returning early; update compiler.py
+    to emit the namespace isinstance guard at the Assign level so it handles multiple
+    NSRef targets correctly"
+  fix_size: medium
+  fix_files: [src/jinja2/compiler.py, src/jinja2/parser.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- flask (redirect 303) ---------------------------------------------------
+- id: flask-5898
+  repo: pallets/flask
+  url: https://github.com/pallets/flask/pull/5898
+  issue: 5898
+  clone: https://github.com/pallets/flask.git
+  base_commit: eb58d862cc4a8f31a369b6e9ad1724e9e642f13f
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "flask.redirect() and App.redirect() both default to HTTP 302 (Found);
+    RFC 9110 recommends 303 (See Other) after POST so browsers don't re-submit the
+    form on reload — the default must be updated in both helpers.py and sansio/app.py"
+  repro: from_pr_description
+  fix_hint: "change the default `code=302` parameter to `code=303` in helpers.py::redirect()
+    and in sansio/app.py::App.redirect(); both files define the same default independently
+    so both need to be updated"
+  fix_size: small
+  fix_files: [src/flask/helpers.py, src/flask/sansio/app.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- werkzeug (parse plain int) --------------------------------------------
+- id: werkzeug-3168
+  repo: pallets/werkzeug
+  url: https://github.com/pallets/werkzeug/pull/3168
+  issue: 3168
+  clone: https://github.com/pallets/werkzeug.git
+  base_commit: c012b33e39fd5dd3405841af04ca9d2145ca80ce
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "Several HTTP parsing functions (parse_age in http.py, Content-Length
+    in serving.py, shared_data middleware, and the debug interface) use int() to convert
+    integer strings from headers; Python's int() accepts '+1', '0x1', '1_000', etc.
+    which are NOT valid HTTP plain integers — the already-existing _plain_int() helper
+    in _internal.py should be used instead"
+  repro: from_pr_description
+  fix_hint: "replace int(value) with _plain_int(value) in http.py (parse_age), serving.py,
+    middleware/shared_data.py, and debug/__init__.py; _plain_int() in _internal.py
+    already exists and rejects non-ASCII-decimal strings"
+  fix_size: medium
+  fix_files: [src/werkzeug/_internal.py, src/werkzeug/http.py, 
+      src/werkzeug/serving.py, src/werkzeug/middleware/shared_data.py, 
+      src/werkzeug/debug/__init__.py]
+  tier: hard
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- starlette (FormParser limits) -----------------------------------------
+- id: starlette-3329
+  repo: encode/starlette
+  url: https://github.com/encode/starlette/pull/3329
+  issue: 3329
+  clone: https://github.com/encode/starlette.git
+  base_commit: 45e51dcf99f3a270b0bcec1aec5410b4345863a9
+  repro_verified: true
+  bug_type: missing-behavior
+  bug_summary: "Request.form(max_fields=N, max_part_size=M) silently ignores both
+    limits for application/x-www-form-urlencoded bodies: the Request.form() method
+    constructs FormParser with only headers and stream, never forwarding the limit
+    parameters; FormParser itself also lacked those parameters entirely"
+  repro: from_pr_description
+  fix_hint: "add max_fields and max_part_size parameters to FormParser.__init__()
+    in formparsers.py (with enforcement logic in FormParser.parse()); then pass them
+    through in the Request.form() url-encoded branch in requests.py"
+  fix_size: medium
+  fix_files: [starlette/formparsers.py, starlette/requests.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e .[full]"
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- marshmallow (data_key in schema validators) ----------------------------
+- id: marshmallow-2792
+  repo: marshmallow-code/marshmallow
+  url: https://github.com/marshmallow-code/marshmallow/pull/2792
+  issue: 2792
+  clone: https://github.com/marshmallow-code/marshmallow.git
+  base_commit: a578ed23092bd558acfbd9cd09a164108689326d
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "when @validates_schema raises ValidationError({'field_name': msg}),
+    the key in the error dict uses the Python attribute name, NOT the field's data_key
+    (external name); this is inconsistent — other marshmallow error paths correctly
+    use data_key — causing API clients to receive errors under a different key than
+    the one they submitted"
+  repro: from_issue_body
+  fix_hint: "in schema.py::_run_validator, after catching ValidationError, look up
+    the field object in self.fields and use field_obj.data_key (if set) as the error
+    key instead of the raw field_name; the SchemaValidator Protocol type is defined
+    in types.py and referenced in decorators.py"
+  fix_size: medium
+  fix_files: [src/marshmallow/schema.py, src/marshmallow/types.py, 
+      src/marshmallow/decorators.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- httpx (urlescape form spaces) -----------------------------------------
+- id: httpx-3373
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/3373
+  issue: 3373
+  clone: https://github.com/encode/httpx.git
+  base_commit: d293374b6603816420a2bb8e7f4fe5a5f09cbfcc
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "httpx's custom urlencode() in _urlparse.py encoded spaces as %20 (percent-encoding)
+    instead of + (application/x-www-form-urlencoded standard); the function was also
+    referenced by _urls.py for QueryParams encoding, meaning query parameters sent
+    by httpx were not compatible with standard form-decoding"
+  repro: from_pr_description
+  fix_hint: "remove urlencode() from _urlparse.py and switch _urls.py to import urllib.parse.urlencode
+    instead (which uses + for spaces and the WHATWG query percent-encode character
+    set)"
+  fix_size: small
+  fix_files: [httpx/_urlparse.py, httpx/_urls.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
+
+  # ---- werkzeug (qvalue integer) ---------------------------------------------
+- id: werkzeug-2753
+  repo: pallets/werkzeug
+  url: https://github.com/pallets/werkzeug/pull/2753
+  issue: 2751
+  clone: https://github.com/pallets/werkzeug.git
+  base_commit: dd1f1371d092086095bc004dfbbdf3a29c4612f0
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: "RFC 9110 says the decimal point in Accept header q-values is optional
+    (q=1 and q=1.0 are equivalent), but werkzeug's internal q-value regex required
+    a decimal point; 'Accept: en;q=0' and 'Accept: en;q=1' were silently dropped from
+    the parsed result, causing wrong content negotiation"
+  repro: from_issue_body
+  fix_hint: "update the q-value regex in _internal.py to accept plain integer q-values
+    without a decimal point (e.g. '1' or '0'), and update parse_accept_header in http.py
+    to use the corrected regex"
+  fix_size: small
+  fix_files: [src/werkzeug/_internal.py, src/werkzeug/http.py]
+  tier: medium
+  test_framework: pytest
+  install: "pip install -e ."
+  test_cmd: "pytest -q"
+  flags: []
