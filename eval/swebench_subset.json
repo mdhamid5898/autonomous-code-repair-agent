@@ -1,0 +1,250 @@
+{
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "split": "test",
+  "filter": {
+    "min_src_files": 2,
+    "per_repo": 2,
+    "max_total": 14,
+    "large_repos": [
+      "astropy/astropy",
+      "django/django",
+      "matplotlib/matplotlib",
+      "pydata/xarray",
+      "scikit-learn/scikit-learn",
+      "sphinx-doc/sphinx",
+      "sympy/sympy"
+    ]
+  },
+  "instances": [
+    {
+      "instance_id": "astropy__astropy-13398",
+      "repo": "astropy/astropy",
+      "label": "astropy",
+      "base_commit": "6500928dc0e57be8f06d1162eacc3ba5e2eff692",
+      "n_src_files": 4,
+      "src_files": [
+        "astropy/coordinates/builtin_frames/__init__.py",
+        "astropy/coordinates/builtin_frames/intermediate_rotation_transforms.py",
+        "astropy/coordinates/builtin_frames/itrs.py",
+        "astropy/coordinates/builtin_frames/itrs_observed_transforms.py"
+      ],
+      "n_fail_to_pass": 4,
+      "n_pass_to_pass": 68,
+      "problem_chars": 5323
+    },
+    {
+      "instance_id": "astropy__astropy-14369",
+      "repo": "astropy/astropy",
+      "label": "astropy",
+      "base_commit": "fa4e8d1cd279acf9b24560813c8652494ccd5922",
+      "n_src_files": 2,
+      "src_files": [
+        "astropy/units/format/cds.py",
+        "astropy/units/format/cds_parsetab.py"
+      ],
+      "n_fail_to_pass": 3,
+      "n_pass_to_pass": 732,
+      "problem_chars": 2597
+    },
+    {
+      "instance_id": "django__django-11532",
+      "repo": "django/django",
+      "label": "django",
+      "base_commit": "a5308514fb4bc5086c9a16a8a24a945eeebb073c",
+      "n_src_files": 5,
+      "src_files": [
+        "django/core/mail/message.py",
+        "django/core/mail/utils.py",
+        "django/core/validators.py",
+        "django/utils/encoding.py",
+        "django/utils/html.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 148,
+      "problem_chars": 2666
+    },
+    {
+      "instance_id": "django__django-11138",
+      "repo": "django/django",
+      "label": "django",
+      "base_commit": "c84b91b7603e488f7171fdff8f08368ef3d6b856",
+      "n_src_files": 4,
+      "src_files": [
+        "django/db/backends/mysql/operations.py",
+        "django/db/backends/oracle/operations.py",
+        "django/db/backends/sqlite3/base.py",
+        "django/db/backends/sqlite3/operations.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 73,
+      "problem_chars": 3135
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-14623",
+      "repo": "matplotlib/matplotlib",
+      "label": "matplotlib",
+      "base_commit": "d65c9ca20ddf81ef91199e6d819f9d3506ef477c",
+      "n_src_files": 3,
+      "src_files": [
+        "lib/matplotlib/axes/_base.py",
+        "lib/matplotlib/ticker.py",
+        "lib/mpl_toolkits/mplot3d/axes3d.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 400,
+      "problem_chars": 1117
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-25775",
+      "repo": "matplotlib/matplotlib",
+      "label": "matplotlib",
+      "base_commit": "26224d96066b5c60882296c551f54ca7732c0af0",
+      "n_src_files": 3,
+      "src_files": [
+        "lib/matplotlib/backends/backend_agg.py",
+        "lib/matplotlib/backends/backend_cairo.py",
+        "lib/matplotlib/text.py"
+      ],
+      "n_fail_to_pass": 7,
+      "n_pass_to_pass": 89,
+      "problem_chars": 718
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-12682",
+      "repo": "scikit-learn/scikit-learn",
+      "label": "sklearn",
+      "base_commit": "d360ffa7c5896a91ae498b3fb9cf464464ce8f34",
+      "n_src_files": 2,
+      "src_files": [
+        "examples/decomposition/plot_sparse_coding.py",
+        "sklearn/decomposition/dict_learning.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 66,
+      "problem_chars": 518
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-25102",
+      "repo": "scikit-learn/scikit-learn",
+      "label": "sklearn",
+      "base_commit": "f9a1cf072da9d7375d6c2163f68a6038b13b310f",
+      "n_src_files": 2,
+      "src_files": [
+        "sklearn/base.py",
+        "sklearn/feature_selection/_base.py"
+      ],
+      "n_fail_to_pass": 2,
+      "n_pass_to_pass": 59,
+      "problem_chars": 2534
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10673",
+      "repo": "sphinx-doc/sphinx",
+      "label": "sphinx",
+      "base_commit": "f35d2a6cc726f97d0e859ca7a0e1729f7da8a6c8",
+      "n_src_files": 3,
+      "src_files": [
+        "sphinx/directives/other.py",
+        "sphinx/environment/adapters/toctree.py",
+        "sphinx/environment/collectors/toctree.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 9,
+      "problem_chars": 1333
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7590",
+      "repo": "sphinx-doc/sphinx",
+      "label": "sphinx",
+      "base_commit": "2e506c5ab457cba743bb47eb5b8c8eb9dd51d23d",
+      "n_src_files": 3,
+      "src_files": [
+        "sphinx/domains/c.py",
+        "sphinx/domains/cpp.py",
+        "sphinx/util/cfamily.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 24,
+      "problem_chars": 600
+    },
+    {
+      "instance_id": "sympy__sympy-13091",
+      "repo": "sympy/sympy",
+      "label": "sympy",
+      "base_commit": "d1320814eda6549996190618a21eaf212cfd4d1e",
+      "n_src_files": 21,
+      "src_files": [
+        "sympy/core/basic.py",
+        "sympy/core/exprtools.py",
+        "sympy/core/numbers.py",
+        "sympy/geometry/entity.py",
+        "sympy/physics/optics/medium.py",
+        "sympy/physics/vector/dyadic.py",
+        "sympy/physics/vector/frame.py",
+        "sympy/physics/vector/vector.py",
+        "sympy/polys/agca/modules.py",
+        "sympy/polys/domains/domain.py",
+        "sympy/polys/domains/expressiondomain.py",
+        "sympy/polys/domains/pythonrational.py",
+        "sympy/polys/domains/quotientring.py",
+        "sympy/polys/fields.py",
+        "sympy/polys/monomials.py",
+        "sympy/polys/polyclasses.py",
+        "sympy/polys/polytools.py",
+        "sympy/polys/rings.py",
+        "sympy/polys/rootoftools.py",
+        "sympy/tensor/array/ndim_array.py",
+        "sympy/utilities/enumerative.py"
+      ],
+      "n_fail_to_pass": 2,
+      "n_pass_to_pass": 89,
+      "problem_chars": 1823
+    },
+    {
+      "instance_id": "sympy__sympy-16597",
+      "repo": "sympy/sympy",
+      "label": "sympy",
+      "base_commit": "6fd65310fa3167b9626c38a5487e171ca407d988",
+      "n_src_files": 6,
+      "src_files": [
+        "sympy/assumptions/ask.py",
+        "sympy/assumptions/ask_generated.py",
+        "sympy/core/assumptions.py",
+        "sympy/core/power.py",
+        "sympy/printing/tree.py",
+        "sympy/tensor/indexed.py"
+      ],
+      "n_fail_to_pass": 3,
+      "n_pass_to_pass": 74,
+      "problem_chars": 611
+    },
+    {
+      "instance_id": "pydata__xarray-3095",
+      "repo": "pydata/xarray",
+      "label": "xarray",
+      "base_commit": "1757dffac2fa493d7b9a074b84cf8c830a706688",
+      "n_src_files": 2,
+      "src_files": [
+        "xarray/core/indexing.py",
+        "xarray/core/variable.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 253,
+      "problem_chars": 2811
+    },
+    {
+      "instance_id": "pydata__xarray-3305",
+      "repo": "pydata/xarray",
+      "label": "xarray",
+      "base_commit": "69c7e01e5167a3137c285cb50d1978252bb8bcbf",
+      "n_src_files": 2,
+      "src_files": [
+        "xarray/core/dataset.py",
+        "xarray/core/variable.py"
+      ],
+      "n_fail_to_pass": 1,
+      "n_pass_to_pass": 653,
+      "problem_chars": 2188
+    }
+  ]
+}
