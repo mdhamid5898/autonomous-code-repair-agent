@@ -153,11 +153,14 @@ def _single_call(client, model, system, user, tool, verbose):
         return {}
 
 
-def _run_test_str(issue: dict, ex) -> str:
+def _run_test_str(issue: dict, ex, grade_fn=None) -> str:
     """Run the pristine repro (re-dropped each call = anti-tamper) and return a compact
     PASS/FAIL + output string into the Coder's context — the test-feedback loop the single
-    agent gets from running pytest itself, which the old blind Coder structurally lacked."""
-    v = grade(issue, ex.repo_dir, ex)
+    agent gets from running pytest itself, which the old blind Coder structurally lacked.
+    grade_fn(issue, ex)->verdict lets the SWE-bench adapter inject its in-container grade
+    (default = the local pristine-repro grade)."""
+    gf = grade_fn or (lambda i, e: grade(i, e.repo_dir, e))
+    v = gf(issue, ex)
     if v["resolved"]:
         return f"PASS ✅ — the repro now passes ({v['summary']}). Call finish_edit."
     return f"FAIL — still red ({v['summary']}).\n{v['log']}"
@@ -222,7 +225,10 @@ def _run_specialist(client, model, messages, tools, finish_name, ex, verbose, la
 # --------------------------------------------------------------------------- #
 # the graph
 # --------------------------------------------------------------------------- #
-def build_graph(ex, client, model: str, verbose: bool):
+def build_graph(ex, client, model: str, verbose: bool, grade_fn=None):
+    # grade_fn(issue, ex)->verdict — default is the local pristine-repro grade; the SWE-bench
+    # adapter injects an in-container FAIL_TO_PASS grade. The Tester stays deterministic either way.
+    grade_fn = grade_fn or (lambda issue, e: grade(issue, e.repo_dir, e))
 
     def log(state, node, detail):
         return state["decision_log"] + [{"node": node, "detail": detail}]
@@ -271,7 +277,7 @@ def build_graph(ex, client, model: str, verbose: bool):
             client, model, messages, [_BASH, _STR_REPLACE, RUN_TEST_TOOL, EDIT_DONE_TOOL],
             "finish_edit", ex, verbose, "Coder", state["transcript"], CODER_STEPS,
             act_tool="str_replace", act_by_step=CODER_ACT_BY_STEP,
-            extra={"run_test": lambda args: _run_test_str(state["issue"], ex)})
+            extra={"run_test": lambda args: _run_test_str(state["issue"], ex, grade_fn)})
         summary = (res or {}).get("summary", "(no finish_edit)")
         if verbose:
             print(f"[Coder] {summary[:90]}")
@@ -280,7 +286,7 @@ def build_graph(ex, client, model: str, verbose: bool):
 
     def tester_node(state: MultiAgentState) -> dict:
         # deterministic: re-drop the pristine repro and run it (anti-tamper grade)
-        v = grade(state["issue"], ex.repo_dir, ex)
+        v = grade_fn(state["issue"], ex)
         if verbose:
             print(f"[Tester] {'PASS ✅' if v['resolved'] else 'FAIL'} — {v['summary']}")
         return {"test_result": v, "status": "reviewing",
@@ -331,24 +337,30 @@ def build_graph(ex, client, model: str, verbose: bool):
 # driver
 # --------------------------------------------------------------------------- #
 def run_multi_agent(issue: dict, model: str, max_iterations: int, verbose: bool,
-                    sandbox: str = "local") -> dict:
+                    sandbox: str = "local", ex=None, grade_fn=None, test_name=None) -> dict:
+    """Local path (ex is None): prepare_repo + drop_repro + Local/DockerExecutor, as before.
+    Injected path (ex given — e.g. the SWE-bench adapter): use the caller's executor, grade_fn,
+    and test_name; the CALLER owns the executor's lifecycle (we don't close it)."""
     os.environ["_MECHANIC_MODEL"] = model
-    iid = issue["id"]
-    repo_dir = prepare_repo(issue, reset=True)
-    test_name = drop_repro(issue, repo_dir)
-    ex = DockerExecutor(repo_dir) if sandbox == "docker" else LocalExecutor(repo_dir)
+    iid = issue.get("id") or issue.get("instance_id")
+    own_ex = ex is None
+    if own_ex:
+        repo_dir = prepare_repo(issue, reset=True)
+        test_name = drop_repro(issue, repo_dir)
+        ex = DockerExecutor(repo_dir) if sandbox == "docker" else LocalExecutor(repo_dir)
     client = make_client()
-    graph = build_graph(ex, client, model, verbose)
+    graph = build_graph(ex, client, model, verbose, grade_fn=grade_fn)
 
     init: MultiAgentState = {
-        "issue": issue, "test_name": test_name, "plan": None, "coder_messages": [],
+        "issue": issue, "test_name": test_name or "(the failing test)", "plan": None, "coder_messages": [],
         "last_edit": None, "test_result": None, "review": None, "iteration": 1,
         "max_iterations": max_iterations, "status": "planning", "decision_log": [], "transcript": [],
     }
     try:
         final = graph.invoke(init, {"recursion_limit": max_iterations * 4 + 20})
     finally:
-        ex.close()
+        if own_ex:
+            ex.close()
 
     v = final.get("test_result") or {"resolved": False, "exit": None, "summary": "no test run", "log": ""}
     return {

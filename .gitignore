@@ -8,6 +8,13 @@
 runs/
 sweep_report*.json
 
+# SWE-bench eval artifacts (machine-generated + large; the subset list eval/swebench_subset.json IS committed)
+logs/
+predictions_*.jsonl
+swebench_report*.json
+gold.*.json
+mechanic-*.json
+
 # internal docs & local project "brain" — NOT committed (repo stays code-only + README).
 # Kept on disk for Claude Code (auto-loads CLAUDE.md) and same-machine Cursor.
 PRD_Autonomous_Code_Repair_Agent.md

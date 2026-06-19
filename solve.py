@@ -113,7 +113,7 @@ def issue_brief(issue: str) -> str:
     """Compact human-readable summary of the issue for the model prompt."""
     return "\n".join(
         f"{k}: {issue[k]}"
-        for k in ("id", "repo", "url", "bug_type", "bug_summary")
+        for k in ("id", "instance_id", "repo", "url", "bug_type", "bug_summary", "problem_statement")
         if issue.get(k)
     )
 
