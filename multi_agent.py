@@ -14,17 +14,23 @@ specialists coordinated by a LangGraph graph, with a bounded re-plan loop:
 
 Roles:
   - Planner   : 1 LLM call. issue + test + file list → {hypothesis, candidate_files, strategy}.
-  - Coder     : short bash + str_replace loop → localizes (from the Planner's candidate
-                files) AND applies the fix, returns a summary.
-  - Tester    : DETERMINISTIC (no LLM) — runs the pristine repro via solve.grade().
+  - Coder     : STATEFUL bash + str_replace + run_test loop. Localizes, edits, and runs the repro
+                ITSELF (edit→run_test→edit); its message history PERSISTS across re-plan rounds, so
+                it never loses context. This mirrors the single agent's tight, full-memory loop.
+  - Tester    : DETERMINISTIC (no LLM) — final anti-tamper gate; runs the pristine repro via solve.grade().
   - Reviewer  : 1 LLM call on failure → decide revise (with feedback) or escalate.
                 (accept is automatic when the Tester is green.)
 
-NOTE: a separate Localizer node was REMOVED (folded into the Coder). The v2 head-to-head
-showed multi-agent REGRESSED vs single-agent (47% vs 87%), and across every Phase-4 trace
-the Localizer burned its full read-only budget without ever calling report_localization —
-the Coder re-localized anyway. Localization was never the bottleneck (committing an edit
-was). It returns as a real, retrieval-backed node in Phase 5.
+NOTE 1 (Phase 4): a separate Localizer node was REMOVED (folded into the Coder) — across every
+trace it burned its read-only budget without ever calling report_localization; the Coder
+re-localized anyway. Localization was never the bottleneck. It returns retrieval-backed in Phase 5.
+
+NOTE 2 (the rebuild): the first 5-/4-role versions REGRESSED vs single-agent (47% vs 87%) because
+the Coder was lobotomized — an 8-step cap, a FRESH context every re-plan round (amnesia), and
+forbidden to run the test (edited blind). The single agent, by contrast, ran pytest mid-edit and
+kept one continuous memory. Fix: the Coder is now stateful (history persists across rounds) and
+runs the test itself via run_test — restoring the edit→test→edit feedback loop. grade() is still
+the final authority, so self-testing can't game the verdict.
 
 Reuses solve.py verbatim for the Executor, tools, dispatch, and grader — only the
 orchestration is new. Measure against the SINGLE-agent baseline on the SAME model.
@@ -53,9 +59,12 @@ from solve import (  # noqa: E402
 )
 from langgraph.graph import StateGraph, START, END  # noqa: E402
 
-MAX_INNER_STEPS = 8       # per-specialist tool-loop cap (the Coder)
 MAX_ITERATIONS = 4        # Coder↔Tester↔Reviewer re-plan rounds
-CODER_ACT_BY_STEP = MAX_INNER_STEPS - 3   # no edit by here → nudge the Coder to commit a fix now
+CODER_STEPS = 20          # the Coder's tool budget per round. It now PERSISTS its message history
+                          # across rounds (stateful resume) and runs the test itself, so this is a
+                          # generous CONTINUOUS budget mirroring the single agent's loop — not the
+                          # fragmented per-attempt cap (the old 8-step cap is what starved it).
+CODER_ACT_BY_STEP = CODER_STEPS - 8   # backstop: if still no edit by here, nudge it to stop exploring
 
 # reuse solve.py's bash + str_replace tool schemas; specialists add a "finish" tool
 _BASH = next(t for t in TOOLS if t["function"]["name"] == "bash")
@@ -73,10 +82,16 @@ PLAN_TOOL = {"type": "function", "function": {
 
 EDIT_DONE_TOOL = {"type": "function", "function": {
     "name": "finish_edit",
-    "description": "Call once the fix has been applied via str_replace.",
+    "description": "Call once your fix makes run_test PASS (or you've truly exhausted ideas).",
     "parameters": {"type": "object", "properties": {
         "summary": {"type": "string", "description": "1-2 sentences: root cause + the change you made"}},
         "required": ["summary"]}}}
+
+RUN_TEST_TOOL = {"type": "function", "function": {
+    "name": "run_test",
+    "description": "Run the failing repro and see its output. CHECK your fix with this: "
+                   "edit → run_test → read the failure → edit again, until it passes.",
+    "parameters": {"type": "object", "properties": {}}}}
 
 REVIEW_TOOL = {"type": "function", "function": {
     "name": "submit_review",
@@ -95,6 +110,7 @@ class MultiAgentState(TypedDict):
     issue: dict
     test_name: str
     plan: Optional[dict]
+    coder_messages: list   # the Coder's PERSISTENT history — carried across re-plan rounds (no amnesia)
     last_edit: Optional[str]
     test_result: Optional[dict]
     review: Optional[dict]
@@ -137,30 +153,37 @@ def _single_call(client, model, system, user, tool, verbose):
         return {}
 
 
-def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose, label, transcript,
-                    act_tool=None, act_by_step=None):
-    """A bounded bash/str_replace tool-loop for a specialist; returns the finish tool's
-    args (or None if it never finished). Appends tool calls to `transcript`.
+def _run_test_str(issue: dict, ex) -> str:
+    """Run the pristine repro (re-dropped each call = anti-tamper) and return a compact
+    PASS/FAIL + output string into the Coder's context — the test-feedback loop the single
+    agent gets from running pytest itself, which the old blind Coder structurally lacked."""
+    v = grade(issue, ex.repo_dir, ex)
+    if v["resolved"]:
+        return f"PASS ✅ — the repro now passes ({v['summary']}). Call finish_edit."
+    return f"FAIL — still red ({v['summary']}).\n{v['log']}"
 
-    act-by-step-N nudge (optional): if `act_tool` (e.g. "str_replace") still hasn't been
-    called by step `act_by_step`, an escalating user message is injected each remaining
-    step pushing the model to COMMIT its best action now. Counters the analysis-paralysis
-    the v2 sweep exposed — every multi-agent failure was the Coder exploring its whole
-    budget and never editing (resolved ⟺ ≥1 edit)."""
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+def _run_specialist(client, model, messages, tools, finish_name, ex, verbose, label, transcript,
+                    max_steps, act_tool=None, act_by_step=None, extra=None):
+    """A bounded tool-loop over a CALLER-OWNED `messages` list (so the Coder can be resumed
+    across re-plan rounds with full memory). Returns (finish_args_or_None, messages).
+    `extra` maps tool-name → handler(args)->str for tools beyond bash/str_replace (e.g. run_test).
+
+    act-by-step-N nudge (optional): if `act_tool` still hasn't been called by `act_by_step`,
+    an escalating message is injected each remaining step — a backstop against the
+    explore-without-editing paralysis the v2 sweep exposed (resolved ⟺ ≥1 edit)."""
+    extra = extra or {}
     result = None
     acted = False
-    for step in range(1, MAX_INNER_STEPS + 1):
+    for step in range(1, max_steps + 1):
         if act_tool and act_by_step and step > act_by_step and not acted:
-            left = MAX_INNER_STEPS - step + 1
             messages.append({"role": "user", "content":
-                f"You have {left} step(s) left and have NOT applied a `{act_tool}` fix yet. "
-                f"STOP exploring. Apply your single best `{act_tool}` edit to the SOURCE now "
-                f"(cat the file first only if you still need exact strings), then call "
-                f"{finish_name}. A best-guess fix the Tester can check beats no fix at all."})
+                f"You have NOT applied a `{act_tool}` fix yet and you're low on steps. STOP exploring. "
+                f"Apply your single best `{act_tool}` edit to the SOURCE now, run_test to check it, "
+                f"then call {finish_name}."})
         msg = _chat(client, model, messages, tools, verbose)
         if msg is None:
-            return {"_error": "api_error"}
+            return {"_error": "api_error"}, messages
         a = {"role": "assistant", "content": msg.content or ""}
         if msg.tool_calls:
             a["tool_calls"] = [
@@ -178,12 +201,14 @@ def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose
                 args = {}
             if name == finish_name:
                 result, out = args, "ok"
+            elif name in extra:
+                out = extra[name](args)
             else:
                 out = dispatch(ex, name, args)
             if name == act_tool:
                 acted = True
             if verbose:
-                prev = args.get("cmd") or args.get("path") or args.get("summary") or args.get("target_file") or ""
+                prev = args.get("cmd") or args.get("path") or args.get("summary") or ""
                 print(f"  [{label} {step}] {name}({str(prev)[:60]})")
             transcript.append({"agent": label, "step": step, "tool": name, "args": args,
                                "result": out if isinstance(out, str) else "ok"})
@@ -191,7 +216,7 @@ def _run_specialist(client, model, system, user, tools, finish_name, ex, verbose
                              "content": out if isinstance(out, str) else "ok"})
         if result is not None:
             break
-    return result
+    return result, messages
 
 
 # --------------------------------------------------------------------------- #
@@ -220,33 +245,37 @@ def build_graph(ex, client, model: str, verbose: bool):
 
     def coder_node(state: MultiAgentState) -> dict:
         plan = state["plan"] or {}
-        feedback = ""
-        if state["review"] and state["review"].get("decision") == "revise":
+        messages = state.get("coder_messages") or []
+        if not messages:
+            # first round: build the Coder's standing context
+            system = ("You are the Coder — you fix the bug end-to-end in this one session. Localize with "
+                      "bash from the Planner's candidate files, apply a minimal source fix with str_replace, "
+                      "then call run_test to check yourself. Iterate edit → run_test → edit until run_test "
+                      "PASSES, then call finish_edit. Commands run from the repo root (repo-relative paths, "
+                      "never cd). NEVER edit the test file — make the SOURCE pass it.")
+            user = (f"{issue_brief(state['issue'])}\n\nHypothesis: {plan.get('hypothesis')}\n"
+                    f"Strategy: {plan.get('strategy')}\n"
+                    f"Candidate files (start here, confirm with bash):\n{plan.get('candidate_files')}\n\n"
+                    "Localize, fix the SOURCE with str_replace, and use run_test to verify — keep iterating "
+                    "until run_test passes, then finish_edit. Don't just explore: edit and test.")
+            messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        else:
+            # resume with FULL memory of prior rounds; add the grader verdict + Reviewer guidance
             tr = state["test_result"] or {}
-            feedback = (f"\n\nThis is retry #{state['iteration']}. Your previous fix FAILED the test:\n"
-                        f"{tr.get('summary')}\nReviewer feedback: {state['review'].get('feedback')}\n"
-                        "Try a different fix.")
-        user = (f"{issue_brief(state['issue'])}\n\nHypothesis: {plan.get('hypothesis')}\n"
-                f"Strategy: {plan.get('strategy')}\n"
-                f"Candidate files (from the Planner — confirm with bash before editing):\n"
-                f"{plan.get('candidate_files')}{feedback}\n\n"
-                "Work fast: spend only a few steps localizing (grep/cat from the candidate files), then "
-                "you MUST apply a fix. Make the smallest correct edit to the SOURCE with str_replace (cat "
-                "the file first for exact strings) — don't over-explore; a best-guess fix the Tester can "
-                "check beats endless reading. NEVER edit the test. Do NOT run the test. Finish with finish_edit.")
-        res = _run_specialist(client, model,
-                              "You are the Coder. Localize quickly with read-only bash from the Planner's "
-                              "candidate files, then COMMIT a minimal source fix via str_replace — bias "
-                              "toward editing early over exploring exhaustively. Commands run from the repo "
-                              "root (repo-relative paths, never cd). Never touch the test file; don't run "
-                              "tests (the Tester does). Finish with finish_edit.",
-                              user, [_BASH, _STR_REPLACE, EDIT_DONE_TOOL], "finish_edit", ex, verbose,
-                              "Coder", state["transcript"],
-                              act_tool="str_replace", act_by_step=CODER_ACT_BY_STEP) or {}
-        summary = res.get("summary", "(no edit reported)")
+            review = state["review"] or {}
+            messages.append({"role": "user", "content":
+                f"The independent grader still reports FAILURE: {tr.get('summary')}\n{tr.get('log')}\n"
+                f"Reviewer guidance: {review.get('feedback')}\n\n"
+                "You still have full context above. Adjust your fix, run_test to check, finish_edit when it passes."})
+        res, messages = _run_specialist(
+            client, model, messages, [_BASH, _STR_REPLACE, RUN_TEST_TOOL, EDIT_DONE_TOOL],
+            "finish_edit", ex, verbose, "Coder", state["transcript"], CODER_STEPS,
+            act_tool="str_replace", act_by_step=CODER_ACT_BY_STEP,
+            extra={"run_test": lambda args: _run_test_str(state["issue"], ex)})
+        summary = (res or {}).get("summary", "(no finish_edit)")
         if verbose:
             print(f"[Coder] {summary[:90]}")
-        return {"last_edit": summary, "status": "testing",
+        return {"coder_messages": messages, "last_edit": summary, "status": "testing",
                 "decision_log": log(state, "coder", summary)}
 
     def tester_node(state: MultiAgentState) -> dict:
@@ -312,7 +341,7 @@ def run_multi_agent(issue: dict, model: str, max_iterations: int, verbose: bool,
     graph = build_graph(ex, client, model, verbose)
 
     init: MultiAgentState = {
-        "issue": issue, "test_name": test_name, "plan": None,
+        "issue": issue, "test_name": test_name, "plan": None, "coder_messages": [],
         "last_edit": None, "test_result": None, "review": None, "iteration": 1,
         "max_iterations": max_iterations, "status": "planning", "decision_log": [], "transcript": [],
     }
