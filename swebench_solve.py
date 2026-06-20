@@ -433,8 +433,18 @@ def run_best_of_n(instance: dict, model: str, max_steps: int, verbose: bool,
 # official grade
 # --------------------------------------------------------------------------- #
 def grade_official(predictions: dict, run_id: str, model_name: str, verbose: bool) -> dict:
-    """predictions: {instance_id: model_patch}. Runs swebench.harness.run_evaluation in a
-    fresh container per instance and returns {instance_id: resolved_bool}."""
+    """predictions: {instance_id: model_patch}. Runs swebench.harness.run_evaluation in a fresh
+    container per instance and returns {instance_id: resolved_bool}.
+
+    CONTENT-ADDRESSED: the run_id is suffixed with a hash of the patches. swebench's run_evaluation
+    CACHES by run_id and SKIPS an instance whose report already exists — so reusing a per-(engine,
+    instance) run_id returns a STALE verdict when you re-grade the SAME instance with a DIFFERENT
+    patch (this silently mis-reported a best-of-N re-run as 'not resolved' using a prior run's patch).
+    Hashing the patch in means identical patches still hit the cache (fast, idempotent) while a
+    changed patch always gets a fresh grade."""
+    import hashlib
+    h = hashlib.sha1("\x00".join(f"{k}={predictions[k]}" for k in sorted(predictions)).encode()).hexdigest()[:10]
+    run_id = f"{run_id}_{h}"
     preds_path = ROOT / f"predictions_{run_id}.jsonl"
     preds_path.write_text("\n".join(json.dumps(
         {"instance_id": iid, "model_name_or_path": model_name, "model_patch": patch})
