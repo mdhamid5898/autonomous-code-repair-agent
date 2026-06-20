@@ -1,0 +1,17 @@
+{
+  "swebench_subset_flash": {
+    "total": 14,
+    "min_resolved": 9,
+    "note": "single agent, deepseek-v4-flash, official grade, pass@1 (~$0.03/run)"
+  },
+  "local_issues_v2_solve": {
+    "total": 15,
+    "min_resolved": 13,
+    "note": "single agent on the 15 hard v2 issues, deepseek, repro-pass grade, pass@1"
+  },
+  "local_issues_v3_solve": {
+    "total": 10,
+    "min_resolved": 8,
+    "note": "single agent on the 10 multi-file v3 issues, deepseek, repro-pass grade, pass@1"
+  }
+}

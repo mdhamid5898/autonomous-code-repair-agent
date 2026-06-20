@@ -2,3 +2,4 @@
 # pytest is installed automatically into each per-issue venv by verify.py.
 ruamel.yaml   # lets verify.py pin base_commit / repro_verified back into issues.yaml (comments preserved)
 pyyaml        # read-only fallback if ruamel is absent
+pytest        # harness-side: the no-API unit tests in tests/ (best-of-N selection, ci_gate) for CI

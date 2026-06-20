@@ -1,0 +1,78 @@
+name: eval-gate
+
+# The eval is the gate. Two tiers:
+#   1) code-health  — runs on EVERY pull request, blocks merge on syntax breakage or a failing
+#                     no-API unit test (best-of-N selection logic, ci_gate logic). Cheap + fast.
+#   2) resolution   — runs on manual dispatch / nightly schedule, NOT per-PR: it actually drives
+#                     the agent over the benchmark and FAILS if the resolved count drops below the
+#                     committed floor in eval/ci_baseline.json. Gated off PRs because it needs an
+#                     API key (cost) and, for the SWE-bench tier, Docker + x86 emulation (a
+#                     self-hosted runner). Make `code-health` a required check to block PRs;
+#                     `resolution` is the scheduled regression alarm.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "local eval manifest to gate"
+        default: eval/issues_v2.yaml
+      baseline_key:
+        description: "ci_baseline.json entry to gate against"
+        default: local_issues_v2_solve
+      model:
+        description: "model id (make_client routes deepseek*)"
+        default: deepseek-v4-flash
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC — weekly regression alarm
+
+jobs:
+  code-health:
+    # Runs on every PR/push. This is the check to mark "required" so it blocks merges.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Set up venv + harness deps
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai
+      - name: Compile all tracked Python (syntax gate)
+        run: .venv/bin/python -m compileall -q $(git ls-files '*.py')
+      - name: No-API unit tests (best-of-N selection + ci_gate)
+        run: .venv/bin/python -m pytest tests/ -q
+
+  resolution:
+    # Real eval-gate: drive the agent over the benchmark, fail if resolution regressed.
+    # Off PRs (needs DEEPSEEK_API_KEY + minutes of API time). The SWE-bench tier additionally
+    # needs Docker + linux/amd64 emulation -> run that one on a self-hosted runner (see README).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Guard — require an API key
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "::error::DEEPSEEK_API_KEY secret not set — cannot run the resolution gate"; exit 1
+          fi
+      - name: Set up venv + deps
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai
+      - name: Build the local benchmark (clone repos + per-issue venvs)
+        run: .venv/bin/python eval/verify.py --manifest "${{ inputs.manifest || 'eval/issues_v2.yaml' }}"
+      - name: Run the agent over the benchmark
+        run: |
+          .venv/bin/python sweep.py --manifest "${{ inputs.manifest || 'eval/issues_v2.yaml' }}" \
+            --engine solve --model "${{ inputs.model || 'deepseek-v4-flash' }}"
+      - name: Gate the resolution rate against the committed baseline
+        run: |
+          REPORT=$(ls -t sweep_report_*_solve.json | head -1)
+          echo "gating $REPORT"
+          .venv/bin/python ci_gate.py --report "$REPORT" --key "${{ inputs.baseline_key || 'local_issues_v2_solve' }}"
