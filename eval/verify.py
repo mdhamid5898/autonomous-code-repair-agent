@@ -68,7 +68,9 @@ def run(cmd, cwd=None, env=None, timeout=120, shell=False):
             shell=shell,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",  # tool/test output isn't always valid UTF-8 (e.g. sphinx emits 0xb2);
+            timeout=timeout,   # decode-replace instead of crashing the whole run with UnicodeDecodeError
         )
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired as e:
