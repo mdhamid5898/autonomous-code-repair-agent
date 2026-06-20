@@ -45,6 +45,8 @@ def main():
     ap.add_argument("--max-iterations", type=int, default=4)
     ap.add_argument("--best-of-n", type=int, default=3, help="candidate trajectories per instance for engine=bestofn")
     ap.add_argument("--no-early-stop", action="store_true", help="for bestofn: always sample all N candidates")
+    ap.add_argument("--escalate", action="store_true",
+                    help="for bestofn: router cheap->strong ladder (v4-flash, then v4-pro on retry)")
     ap.add_argument("--only", nargs="*", help="subset of instance_ids")
     ap.add_argument("--no-grade", action="store_true", help="run agents but skip official grading")
     args = ap.parse_args()
@@ -71,7 +73,7 @@ def main():
         try:
             instance = load_instance(iid)
             rec = solve_instance(instance, args.engine, args.model, budget, verbose=False,
-                                 n=args.best_of_n, early_stop=not args.no_early_stop)
+                                 n=args.best_of_n, early_stop=not args.no_early_stop, escalate=args.escalate)
             resolved = None
             if not args.no_grade and not rec["patch_empty"]:
                 model_name = f"mechanic-{args.engine}-{args.model}"

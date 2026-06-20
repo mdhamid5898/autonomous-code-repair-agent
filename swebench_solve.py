@@ -357,28 +357,33 @@ _BON_SEEDS = [
 
 
 def run_best_of_n(instance: dict, model: str, max_steps: int, verbose: bool,
-                  ex: SweBenchExecutor, n: int = 3, early_stop: bool = True):
+                  ex: SweBenchExecutor, n: int = 3, early_stop: bool = True, models: list | None = None):
     """Run the single agent up to N times (varied temperature + per-attempt seed nudge), grade each
     captured patch in-container (reset+apply+full-file test == the official eval command), and KEEP
     the first candidate that passes (F2P flips AND P2P holds). Leaves the winning patch applied so the
-    caller's git_diff()/official grade see it. Falls back to the largest non-empty patch if none pass."""
+    caller's git_diff()/official grade see it. Falls back to the largest non-empty patch if none pass.
+    `models` (optional, from the router's escalation ladder) sets a per-attempt model id — e.g.
+    [v4-flash, v4-pro, ...] = cheap first, escalate to strong on retry; if None, all attempts use `model`."""
     candidates = []
     for i in range(n):
         if i > 0:
             ex.reset_clean()  # independent fresh start per attempt
+        attempt_model = models[i] if (models and i < len(models)) else model
         temp = round(0.0 if i == 0 else min(0.4 + 0.3 * (i - 1), 1.0), 2)
         seed = _BON_SEEDS[i] if i < len(_BON_SEEDS) else _BON_SEEDS[-1]
-        meta = run_single(instance, model, max_steps, verbose, governed=False, ex=ex,
+        meta = run_single(instance, attempt_model, max_steps, verbose, governed=False, ex=ex,
                           temperature=temp, seed_hint=seed)
         patch = ex.git_diff()
         gv = (ex.grade_patch(patch) if patch.strip()
               else {"resolved": False, "exit": -1, "summary": "empty patch"})
-        candidates.append({"i": i, "temperature": temp, "patch": patch, "patch_empty": not patch.strip(),
+        candidates.append({"i": i, "model": attempt_model, "temperature": temp, "patch": patch,
+                           "patch_empty": not patch.strip(),
                            "incontainer_pass": bool(gv["resolved"]), "grade_summary": gv.get("summary"),
                            "steps": meta.get("steps"), "stop_reason": meta.get("stop_reason"),
                            "submitted_summary": meta.get("submitted_summary")})
         if verbose:
-            print(f"  [best-of-N cand {i} @T={temp}: {'PASS ✅' if gv['resolved'] else 'fail'} "
+            print(f"  [best-of-N cand {i} ({attempt_model} @T={temp}): "
+                  f"{'PASS ✅' if gv['resolved'] else 'fail'} "
                   f"({'empty' if not patch.strip() else str(len(patch)) + 'ch'}, {meta.get('steps')} steps, "
                   f"{gv.get('summary')})]")
         if gv["resolved"] and early_stop:
@@ -429,9 +434,10 @@ def grade_official(predictions: dict, run_id: str, model_name: str, verbose: boo
 # driver
 # --------------------------------------------------------------------------- #
 def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose: bool,
-                   n: int = 3, early_stop: bool = True):
+                   n: int = 3, early_stop: bool = True, escalate: bool = False):
     """Provision image, run the agent, capture the patch, return a run record (ungraded).
-    `n`/`early_stop` apply only to engine="bestofn" (number of sampled candidates)."""
+    `n`/`early_stop`/`escalate` apply only to engine="bestofn": number of sampled candidates and
+    whether to use the router's cheap->strong escalation ladder across attempts."""
     image = ensure_image(instance, verbose)
     ex = SweBenchExecutor(instance, image, verbose)
     t0 = time.time()
@@ -449,7 +455,14 @@ def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose
                         "submitted_summary": None, "tool_trace": rec.get("tool_trace", []),
                         "decision_log": rec.get("decision_log", [])}
         elif engine == "bestofn":
-            run_meta = run_best_of_n(instance, model, budget, verbose, ex=ex, n=n, early_stop=early_stop)
+            models = None
+            if escalate:  # cheap-first, escalate to strong on retry (the router's ladder)
+                from router import escalation_ladder
+                models = escalation_ladder(n)
+                if verbose:
+                    print(f"  [best-of-N escalation ladder: {models}]")
+            run_meta = run_best_of_n(instance, model, budget, verbose, ex=ex, n=n,
+                                     early_stop=early_stop, models=models)
         else:
             run_meta = run_single(instance, model, budget, verbose, governed=(engine == "governed"), ex=ex)
         patch = ex.git_diff()
@@ -472,6 +485,8 @@ def main():
     ap.add_argument("--best-of-n", type=int, default=3, help="candidate trajectories to sample for engine=bestofn")
     ap.add_argument("--no-early-stop", action="store_true",
                     help="for bestofn: sample ALL N candidates even after one passes (characterize pass rate)")
+    ap.add_argument("--escalate", action="store_true",
+                    help="for bestofn: use the router's cheap->strong ladder (v4-flash, then v4-pro on retry)")
     ap.add_argument("--grade", action="store_true", help="also run the official swebench grader")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -485,7 +500,7 @@ def main():
              if args.engine == "bestofn" else ""))
 
     rec = solve_instance(instance, args.engine, args.model, budget, args.verbose,
-                         n=args.best_of_n, early_stop=not args.no_early_stop)
+                         n=args.best_of_n, early_stop=not args.no_early_stop, escalate=args.escalate)
     print(f"  agent done: steps={rec.get('steps')} stop={rec.get('stop_reason')} "
           + (f"candidates={rec.get('n_candidates')} passing={rec.get('n_passing')} winner=#{rec.get('winner_index')} "
              if args.engine == "bestofn" else "")
