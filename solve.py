@@ -343,14 +343,18 @@ Keep changes minimal and targeted. Do not install packages or touch unrelated fi
 # --------------------------------------------------------------------------- #
 # the agent loop
 # --------------------------------------------------------------------------- #
-def _chat_with_backoff(client, model, messages, verbose, attempts=6):
+def _chat_with_backoff(client, model, messages, verbose, attempts=6, temperature=0):
     """Call chat.completions, backing off on rate limits / transient API errors.
-    Returns the assistant message, or None if the API stays unavailable."""
+    Returns the assistant message, or None if the API stays unavailable.
+    `temperature` defaults to 0 (deterministic single runs); best-of-N varies it to
+    sample diverse candidate trajectories. Reasoning tiers (v4-pro) may ignore it — the
+    best-of-N sampler also varies a per-attempt prompt seed so diversity does not depend
+    on temperature being honored."""
     for i in range(attempts):
         try:
             resp = client.chat.completions.create(
                 model=model, messages=messages, tools=TOOLS,
-                tool_choice="auto", temperature=0,
+                tool_choice="auto", temperature=temperature,
             )
             return resp.choices[0].message
         except (_RateLimitError, _APIError) as e:

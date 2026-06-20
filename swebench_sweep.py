@@ -39,10 +39,12 @@ SUBSET = ROOT / "eval" / "swebench_subset.json"
 
 def main():
     ap = argparse.ArgumentParser(description="Run one engine over the SWE-bench subset, officially graded.")
-    ap.add_argument("--engine", choices=["solve", "governed", "multi"], default="solve")
+    ap.add_argument("--engine", choices=["solve", "governed", "multi", "bestofn"], default="solve")
     ap.add_argument("--model", default="deepseek-chat")
     ap.add_argument("--max-steps", type=int, default=40)
     ap.add_argument("--max-iterations", type=int, default=4)
+    ap.add_argument("--best-of-n", type=int, default=3, help="candidate trajectories per instance for engine=bestofn")
+    ap.add_argument("--no-early-stop", action="store_true", help="for bestofn: always sample all N candidates")
     ap.add_argument("--only", nargs="*", help="subset of instance_ids")
     ap.add_argument("--no-grade", action="store_true", help="run agents but skip official grading")
     args = ap.parse_args()
@@ -68,7 +70,8 @@ def main():
         t0 = time.time()
         try:
             instance = load_instance(iid)
-            rec = solve_instance(instance, args.engine, args.model, budget, verbose=False)
+            rec = solve_instance(instance, args.engine, args.model, budget, verbose=False,
+                                 n=args.best_of_n, early_stop=not args.no_early_stop)
             resolved = None
             if not args.no_grade and not rec["patch_empty"]:
                 model_name = f"mechanic-{args.engine}-{args.model}"
@@ -78,7 +81,8 @@ def main():
                    "engine": args.engine, "resolved": bool(resolved), "official_resolved": resolved,
                    "incontainer_f2p_pass": rec["incontainer_f2p_pass"], "patch_empty": rec["patch_empty"],
                    "steps": rec.get("steps"), "stop_reason": rec.get("stop_reason"),
-                   "seconds": round(time.time() - t0, 1)}
+                   "n_candidates": rec.get("n_candidates"), "n_passing": rec.get("n_passing"),
+                   "winner_index": rec.get("winner_index"), "seconds": round(time.time() - t0, 1)}
         except Exception as e:  # one instance must never kill the sweep
             row = {"instance_id": iid, "repo": c["label"], "n_src_files": c["n_src_files"],
                    "engine": args.engine, "resolved": False, "official_resolved": None,

@@ -31,3 +31,7 @@ memory/
 # python cruft
 __pycache__/
 *.pyc
+
+# background sweep logs + scratch runner (machine artifacts)
+*.log
+run_v4pro_sweep.sh

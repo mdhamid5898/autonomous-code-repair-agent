@@ -181,22 +181,28 @@ class SweBenchExecutor(Executor):
                 4: f"ERROR: {path} does not exist"}.get(code, f"ERROR: edit failed: {tail(err or out)}")
 
     # --- grading / capture ---
-    def run_fail_to_pass(self, clean: bool = True) -> dict:
-        """Run THIS instance's FAIL_TO_PASS tests in-container. exit 0 => they pass.
-        If clean=True (default), first RESET to the committed base+test_patch and RE-APPLY the agent's
-        captured source diff (dropping untracked junk + stale __pycache__) so the verdict matches what
-        the OFFICIAL grader sees (a fresh apply) — NOT the agent's drifted live tree. This kills the
-        false-negatives we hit (e.g. multi's Tester said FAIL while the captured patch actually resolved).
-        The agent's edits are tracked-file str_replaces, so they survive the reset (re-applied via the diff)."""
-        if clean:
-            diff = self.git_diff()  # full candidate patch (incl. new files) vs the test_patch commit
-            self._dexec("git reset --hard HEAD -q && git clean -fdq -e .venv && "
-                        "find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null; true",
-                        conda=False, timeout=120)
-            if diff.strip():
-                b = base64.b64encode(diff.encode()).decode()
-                self._dexec('printf %s "$D" | base64 -d | git apply --whitespace=nowarn',
-                            conda=False, env=[f"D={b}"], timeout=120)
+    def reset_clean(self):
+        """Reset the repo to the committed base+test_patch state — drop all source edits, untracked
+        files, and stale __pycache__ (the state the official grader applies a patch onto)."""
+        self._dexec("git reset --hard HEAD -q && git clean -fdq -e .venv && "
+                    "find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null; true",
+                    conda=False, timeout=120)
+
+    def apply_patch(self, patch: str):
+        """git-apply a candidate SOURCE patch onto the current (clean) tree. No-op if empty."""
+        if patch.strip():
+            b = base64.b64encode(patch.encode()).decode()
+            self._dexec('printf %s "$D" | base64 -d | git apply --whitespace=nowarn',
+                        conda=False, env=[f"D={b}"], timeout=120)
+
+    def _run_test_cmd(self) -> dict:
+        """Run THIS instance's test command == the OFFICIAL eval command (repo test_cmd + the directives
+        derived from the test_patch, i.e. the WHOLE touched test file(s)); exit 0 ⟺ every test in those
+        files passes. The official grader scores ALL of an instance's PASS_TO_PASS nodes from this SAME
+        run, and a P2P node missing from the log counts as FAILED — so for any gold-resolvable instance
+        every PASS_TO_PASS test lives in these files. Hence exit 0 ⟺ all FAIL_TO_PASS flipped AND all
+        PASS_TO_PASS held: a faithful, cheap proxy for the official grade and a built-in regression guard
+        (a destructive patch that breaks P2P tests -> non-zero exit -> rejected)."""
         cmd = test_command(self.instance)
         code, out, err = self._dexec(cmd, timeout=GRADE_TEST_TIMEOUT, conda=True)
         blob = (out or "") + "\n" + (err or "")
@@ -207,6 +213,25 @@ class SweBenchExecutor(Executor):
                 break
         return {"resolved": code == 0, "exit": code, "summary": summary or "(no summary)",
                 "log": tail(blob, 30)}
+
+    def grade_patch(self, patch: str) -> dict:
+        """Authoritative-equivalent in-container grade of a SPECIFIC candidate patch: reset to
+        base+test_patch, apply the patch FRESH, run the full test file(s). Used by best-of-N to score
+        each sampled candidate cheaply (no per-candidate official container spin). See _run_test_cmd
+        for why exit 0 ⟺ official 'resolved' on these instances."""
+        self.reset_clean()
+        self.apply_patch(patch)
+        return self._run_test_cmd()
+
+    def run_fail_to_pass(self, clean: bool = True) -> dict:
+        """Grade THIS instance in-container. clean=True (default) first RESETs to the committed
+        base+test_patch and RE-APPLIES the agent's captured live diff — so the verdict matches what the
+        OFFICIAL grader sees (a fresh apply), NOT the agent's drifted live tree (which gave false
+        negatives, e.g. multi's Tester said FAIL while the captured patch actually resolved). clean=False
+        grades the current tree as-is (used for the red-on-base check, where there are no edits yet)."""
+        if clean:
+            return self.grade_patch(self.git_diff())
+        return self._run_test_cmd()
 
     def git_diff(self) -> str:
         """The agent's candidate patch: SOURCE diff vs the test_patch commit."""
@@ -250,12 +275,15 @@ def swe_messages(instance: dict, test_cmd: str) -> list:
 # --------------------------------------------------------------------------- #
 # the single / governed agent loop (thin; reuses solve's dispatch/TOOLS/backoff)
 # --------------------------------------------------------------------------- #
-def run_single(instance: dict, model: str, max_steps: int, verbose: bool, governed: bool, ex: SweBenchExecutor):
+def run_single(instance: dict, model: str, max_steps: int, verbose: bool, governed: bool,
+               ex: SweBenchExecutor, temperature: float = 0.0, seed_hint: str = ""):
     import os
     os.environ["_MECHANIC_MODEL"] = model
     client = make_client()
     test_cmd = test_command(instance)
     messages = swe_messages(instance, test_cmd)
+    if seed_hint:  # best-of-N diversity: nudge this attempt toward a different hypothesis
+        messages.append({"role": "user", "content": seed_hint})
     trace, submitted, stop_reason, steps = [], None, "max_steps", 0
     acted = False                    # has the agent edited SOURCE yet? (resolved ⟺ ≥1 edit)
     act_by = max(8, max_steps // 2)  # anti-paralysis backstop (ported from multi's Coder): a reasoning
@@ -266,7 +294,7 @@ def run_single(instance: dict, model: str, max_steps: int, verbose: bool, govern
                 "You have NOT edited any SOURCE yet and you're past halfway on your step budget. STOP "
                 "exploring. Apply your single best str_replace fix to the SOURCE now, run the failing "
                 "test to verify, then submit once it passes. A tested edit beats more reading."})
-        msg = _chat_with_backoff(client, model, messages, verbose)
+        msg = _chat_with_backoff(client, model, messages, verbose, temperature=temperature)
         if msg is None:
             stop_reason = "api_error"; break
         a = {"role": "assistant", "content": msg.content or ""}
@@ -308,6 +336,71 @@ def run_single(instance: dict, model: str, max_steps: int, verbose: bool, govern
 
 
 # --------------------------------------------------------------------------- #
+# best-of-N: sample N independent repair trajectories, keep the first that the
+# in-container grade accepts (F2P flips AND P2P holds). This is the residual lever the
+# iso-control + breadth experiments pointed to — django-11138 only resolved via multi's
+# FOUR re-plan rounds (≈ four fix attempts), not decomposition; best-of-N captures that
+# "more attempts" win for the SINGLE agent, while the in-container grade guards against a
+# destructive candidate (the sympy patch that broke 74 PASS_TO_PASS) being accepted.
+# --------------------------------------------------------------------------- #
+# Per-attempt seed nudges (i>0): cheap trajectory diversity that does NOT depend on the
+# model honoring `temperature` (reasoning tiers like v4-pro may ignore it).
+_BON_SEEDS = [
+    "",  # attempt 0 = the canonical run (temperature 0, no nudge)
+    "(Solution attempt #2. If the obvious fix is at the call site, consider instead that the "
+    "ROOT CAUSE may live deeper — in the underlying function/class this path delegates to.)",
+    "(Solution attempt #3. Re-examine your localization from scratch: grep for OTHER code paths "
+    "that produce the same symptom; the responsible spot may be a different file than you'd assume.)",
+    "(Solution attempt #4. Prefer the smallest, most targeted change that makes the test pass "
+    "WITHOUT altering unrelated behavior — a narrow guard/branch rather than a broad rewrite.)",
+]
+
+
+def run_best_of_n(instance: dict, model: str, max_steps: int, verbose: bool,
+                  ex: SweBenchExecutor, n: int = 3, early_stop: bool = True):
+    """Run the single agent up to N times (varied temperature + per-attempt seed nudge), grade each
+    captured patch in-container (reset+apply+full-file test == the official eval command), and KEEP
+    the first candidate that passes (F2P flips AND P2P holds). Leaves the winning patch applied so the
+    caller's git_diff()/official grade see it. Falls back to the largest non-empty patch if none pass."""
+    candidates = []
+    for i in range(n):
+        if i > 0:
+            ex.reset_clean()  # independent fresh start per attempt
+        temp = round(0.0 if i == 0 else min(0.4 + 0.3 * (i - 1), 1.0), 2)
+        seed = _BON_SEEDS[i] if i < len(_BON_SEEDS) else _BON_SEEDS[-1]
+        meta = run_single(instance, model, max_steps, verbose, governed=False, ex=ex,
+                          temperature=temp, seed_hint=seed)
+        patch = ex.git_diff()
+        gv = (ex.grade_patch(patch) if patch.strip()
+              else {"resolved": False, "exit": -1, "summary": "empty patch"})
+        candidates.append({"i": i, "temperature": temp, "patch": patch, "patch_empty": not patch.strip(),
+                           "incontainer_pass": bool(gv["resolved"]), "grade_summary": gv.get("summary"),
+                           "steps": meta.get("steps"), "stop_reason": meta.get("stop_reason"),
+                           "submitted_summary": meta.get("submitted_summary")})
+        if verbose:
+            print(f"  [best-of-N cand {i} @T={temp}: {'PASS ✅' if gv['resolved'] else 'fail'} "
+                  f"({'empty' if not patch.strip() else str(len(patch)) + 'ch'}, {meta.get('steps')} steps, "
+                  f"{gv.get('summary')})]")
+        if gv["resolved"] and early_stop:
+            break  # first passing candidate wins — stop sampling (the cost-efficient default)
+
+    winner = next((c for c in candidates if c["incontainer_pass"]), None)
+    if winner is None:  # nothing passed — submit the most substantive attempt for the official grade
+        non_empty = [c for c in candidates if not c["patch_empty"]]
+        winner = max(non_empty, key=lambda c: len(c["patch"])) if non_empty else candidates[-1]
+    ex.reset_clean()
+    ex.apply_patch(winner["patch"])  # leave winner applied for capture + official grade
+    return {"submitted_summary": winner.get("submitted_summary"),
+            "stop_reason": f"bestofn_{'pass' if winner['incontainer_pass'] else 'nopass'}",
+            "steps": sum((c.get("steps") or 0) for c in candidates),  # total agent steps across attempts
+            "edited": any(not c["patch_empty"] for c in candidates),
+            "n_candidates": len(candidates), "winner_index": winner["i"],
+            "n_passing": sum(c["incontainer_pass"] for c in candidates),
+            "candidates": [{k: v for k, v in c.items() if k != "patch"} for c in candidates],
+            "tool_trace": [], "messages": []}
+
+
+# --------------------------------------------------------------------------- #
 # official grade
 # --------------------------------------------------------------------------- #
 def grade_official(predictions: dict, run_id: str, model_name: str, verbose: bool) -> dict:
@@ -335,8 +428,10 @@ def grade_official(predictions: dict, run_id: str, model_name: str, verbose: boo
 # --------------------------------------------------------------------------- #
 # driver
 # --------------------------------------------------------------------------- #
-def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose: bool):
-    """Provision image, run the agent, capture the patch, return a run record (ungraded)."""
+def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose: bool,
+                   n: int = 3, early_stop: bool = True):
+    """Provision image, run the agent, capture the patch, return a run record (ungraded).
+    `n`/`early_stop` apply only to engine="bestofn" (number of sampled candidates)."""
     image = ensure_image(instance, verbose)
     ex = SweBenchExecutor(instance, image, verbose)
     t0 = time.time()
@@ -353,6 +448,8 @@ def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose
             run_meta = {"steps": rec.get("iterations"), "stop_reason": rec.get("status"),
                         "submitted_summary": None, "tool_trace": rec.get("tool_trace", []),
                         "decision_log": rec.get("decision_log", [])}
+        elif engine == "bestofn":
+            run_meta = run_best_of_n(instance, model, budget, verbose, ex=ex, n=n, early_stop=early_stop)
         else:
             run_meta = run_single(instance, model, budget, verbose, governed=(engine == "governed"), ex=ex)
         patch = ex.git_diff()
@@ -368,10 +465,13 @@ def solve_instance(instance: dict, engine: str, model: str, budget: int, verbose
 def main():
     ap = argparse.ArgumentParser(description="Run a Mechanic engine on one SWE-bench Verified instance.")
     ap.add_argument("--instance", required=True)
-    ap.add_argument("--engine", choices=["solve", "governed", "multi"], default="solve")
+    ap.add_argument("--engine", choices=["solve", "governed", "multi", "bestofn"], default="solve")
     ap.add_argument("--model", default="deepseek-chat")
-    ap.add_argument("--max-steps", type=int, default=40, help="tool-step cap for solve/governed")
+    ap.add_argument("--max-steps", type=int, default=40, help="tool-step cap for solve/governed/bestofn (per attempt)")
     ap.add_argument("--max-iterations", type=int, default=4, help="re-plan rounds for multi")
+    ap.add_argument("--best-of-n", type=int, default=3, help="candidate trajectories to sample for engine=bestofn")
+    ap.add_argument("--no-early-stop", action="store_true",
+                    help="for bestofn: sample ALL N candidates even after one passes (characterize pass rate)")
     ap.add_argument("--grade", action="store_true", help="also run the official swebench grader")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -380,11 +480,16 @@ def main():
     instance = load_instance(args.instance)
     budget = args.max_iterations if args.engine == "multi" else args.max_steps
     RUNS_DIR.mkdir(exist_ok=True)
-    print(f"[swe-bench] {args.instance} | engine={args.engine} | model={args.model} | budget={budget}")
+    print(f"[swe-bench] {args.instance} | engine={args.engine} | model={args.model} | budget={budget}"
+          + (f" | best-of-{args.best_of_n}{' (no early-stop)' if args.no_early_stop else ''}"
+             if args.engine == "bestofn" else ""))
 
-    rec = solve_instance(instance, args.engine, args.model, budget, args.verbose)
+    rec = solve_instance(instance, args.engine, args.model, budget, args.verbose,
+                         n=args.best_of_n, early_stop=not args.no_early_stop)
     print(f"  agent done: steps={rec.get('steps')} stop={rec.get('stop_reason')} "
-          f"in-container F2P {'PASS' if rec['incontainer_f2p_pass'] else 'fail'} "
+          + (f"candidates={rec.get('n_candidates')} passing={rec.get('n_passing')} winner=#{rec.get('winner_index')} "
+             if args.engine == "bestofn" else "")
+          + f"in-container F2P {'PASS' if rec['incontainer_f2p_pass'] else 'fail'} "
           f"patch={'EMPTY' if rec['patch_empty'] else str(len(rec['patch']))+' chars'} ({rec['seconds']}s)")
 
     if args.grade and not rec["patch_empty"]:
