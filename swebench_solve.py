@@ -195,14 +195,38 @@ class SweBenchExecutor(Executor):
             self._dexec('printf %s "$D" | base64 -d | git apply --whitespace=nowarn',
                         conda=False, env=[f"D={b}"], timeout=120)
 
+    def _official_verdict(self, blob: str, exit_code: int) -> bool:
+        """Resolved verdict that MATCHES the official grader: parse the test log with swebench's repo
+        parser and require every FAIL_TO_PASS to pass AND every PASS_TO_PASS to hold — scoring ONLY those
+        gold node ids. The bare exit code is NOT equivalent: the eval command runs the whole touched test
+        file, which can contain tests outside F2P∪P2P that fail independently (e.g. django runs a module
+        with 3 unrelated failures) → exit≠0 while the official grade is RESOLVED. Falls back to exit==0 if
+        the parser yields nothing (robustness)."""
+        try:
+            from swebench.harness.grading import get_eval_tests_report, get_resolution_status
+            from swebench.harness.constants import (ResolvedStatus, FAIL_ONLY_REPOS, EvalType,
+                                                    FAIL_TO_PASS as K_F2P, PASS_TO_PASS as K_P2P)
+            from swebench.harness.log_parsers import MAP_REPO_TO_PARSER
+            from swebench.harness.test_spec.test_spec import make_test_spec
+            spec = make_test_spec(self.instance)
+            status_map = MAP_REPO_TO_PARSER[self.instance["repo"]](blob, spec)
+            if not status_map:
+                return exit_code == 0
+            ids = lambda k: (json.loads(self.instance[k]) if isinstance(self.instance[k], str)
+                             else list(self.instance[k]))
+            eval_ref = {K_F2P: ids("FAIL_TO_PASS"), K_P2P: ids("PASS_TO_PASS")}
+            eval_type = EvalType.FAIL_ONLY if self.instance["repo"] in FAIL_ONLY_REPOS else EvalType.PASS_AND_FAIL
+            report = get_eval_tests_report(status_map, eval_ref, eval_type=eval_type)
+            return get_resolution_status(report) == ResolvedStatus.FULL.value
+        except Exception:
+            return exit_code == 0  # parser unavailable/changed -> conservative exit-code proxy
+
     def _run_test_cmd(self) -> dict:
-        """Run THIS instance's test command == the OFFICIAL eval command (repo test_cmd + the directives
-        derived from the test_patch, i.e. the WHOLE touched test file(s)); exit 0 ⟺ every test in those
-        files passes. The official grader scores ALL of an instance's PASS_TO_PASS nodes from this SAME
-        run, and a P2P node missing from the log counts as FAILED — so for any gold-resolvable instance
-        every PASS_TO_PASS test lives in these files. Hence exit 0 ⟺ all FAIL_TO_PASS flipped AND all
-        PASS_TO_PASS held: a faithful, cheap proxy for the official grade and a built-in regression guard
-        (a destructive patch that breaks P2P tests -> non-zero exit -> rejected)."""
+        """Run THIS instance's test command (== the OFFICIAL eval command: repo test_cmd + the directives
+        from the test_patch, i.e. the WHOLE touched test file(s)), then compute an OFFICIAL-EQUIVALENT
+        verdict by parsing the log for exactly the FAIL_TO_PASS/PASS_TO_PASS gold node ids — not the bare
+        exit code, which false-negatives when the file has unrelated failing tests (the django case). Still
+        a real PASS_TO_PASS regression guard (a destructive patch breaks a P2P node -> not resolved)."""
         cmd = test_command(self.instance)
         code, out, err = self._dexec(cmd, timeout=GRADE_TEST_TIMEOUT, conda=True)
         blob = (out or "") + "\n" + (err or "")
@@ -211,14 +235,14 @@ class SweBenchExecutor(Executor):
             if any(w in line for w in ("passed", "failed", "error", "PASSED", "FAILED", "OK", "Ran ")):
                 summary = line.strip(" =")
                 break
-        return {"resolved": code == 0, "exit": code, "summary": summary or "(no summary)",
-                "log": tail(blob, 30)}
+        return {"resolved": self._official_verdict(blob, code), "exit": code, "exit_resolved": code == 0,
+                "summary": summary or "(no summary)", "log": tail(blob, 30)}
 
     def grade_patch(self, patch: str) -> dict:
-        """Authoritative-equivalent in-container grade of a SPECIFIC candidate patch: reset to
-        base+test_patch, apply the patch FRESH, run the full test file(s). Used by best-of-N to score
-        each sampled candidate cheaply (no per-candidate official container spin). See _run_test_cmd
-        for why exit 0 ⟺ official 'resolved' on these instances."""
+        """Official-EQUIVALENT in-container grade of a SPECIFIC candidate patch: reset to base+test_patch,
+        apply the patch FRESH, run the full test file(s), and score exactly the F2P/P2P node ids via
+        swebench's parser (see _run_test_cmd). Lets best-of-N select among candidates cheaply (no
+        per-candidate official container spin) while matching what the official grader would say."""
         self.reset_clean()
         self.apply_patch(patch)
         return self._run_test_cmd()
