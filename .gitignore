@@ -32,6 +32,6 @@ memory/
 __pycache__/
 *.pyc
 
-# background sweep logs + scratch runner (machine artifacts)
+# background sweep logs + scratch runner scripts (machine artifacts)
 *.log
-run_v4pro_sweep.sh
+run_*.sh
