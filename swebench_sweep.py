@@ -111,6 +111,10 @@ def main():
         small = [r for r in graded if r.get("n_src_files", 0) == 2]
         print(f"  by breadth: >=3 src files {sum(r['resolved'] for r in big)}/{len(big)}  |  "
               f"==2 src files {sum(r['resolved'] for r in small)}/{len(small)}")
+    try:
+        from tracing import flush; flush()  # send any Langfuse traces (no-op unless enabled)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

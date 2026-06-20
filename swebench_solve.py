@@ -517,6 +517,10 @@ def main():
     out = RUNS_DIR / f"swe_{args.instance.replace('__', '_')}_{args.engine}_{int(time.time())}.json"
     out.write_text(json.dumps(rec, indent=2, default=str))
     print(f"  trace -> {out.relative_to(ROOT)}")
+    try:
+        from tracing import flush; flush()  # send any Langfuse traces (no-op unless enabled)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

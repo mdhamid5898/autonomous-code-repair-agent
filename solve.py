@@ -89,8 +89,14 @@ def load_env() -> None:
 
 def make_client():
     """Return an OpenAI-compatible client routed by DEFAULT_MODEL / --model flag.
-    DeepSeek uses its own base URL and DEEPSEEK_API_KEY; everything else uses OPENAI_API_KEY."""
-    from openai import OpenAI
+    DeepSeek uses its own base URL and DEEPSEEK_API_KEY; everything else uses OPENAI_API_KEY.
+    When tracing is enabled (MECHANIC_TRACE=1 + Langfuse keys) the client is Langfuse's
+    auto-tracing OpenAI drop-in; otherwise it's the plain client (tracing never breaks a run)."""
+    try:
+        from tracing import openai_class
+        OpenAI = openai_class()
+    except Exception:
+        from openai import OpenAI
     model = os.environ.get("_MECHANIC_MODEL", DEFAULT_MODEL)
     if model.startswith("deepseek"):
         key = os.environ.get("DEEPSEEK_API_KEY")
@@ -506,6 +512,10 @@ def main():
     print(f"  repro: {v['summary']}")
     print(f"  trace: {out.relative_to(ROOT)}")
     print("=" * 60)
+    try:
+        from tracing import flush; flush()  # send any Langfuse traces (no-op unless enabled)
+    except Exception:
+        pass
     sys.exit(0 if v["resolved"] else 2)
 
 
