@@ -60,7 +60,9 @@ except Exception:  # pragma: no cover
     class _APIError(Exception):
         pass
 
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_MODEL = "deepseek-v4-flash"  # cheap default ($0.14/$0.28 per M); escalate to deepseek-v4-pro
+# for hard fixes via --model. (The legacy "deepseek-chat"/"deepseek-reasoner" aliases are deprecated
+# 2026-07-24 and now map to v4-flash anyway; make_client routes any "deepseek*" to the DeepSeek base URL.)
 MAX_STEPS = 30
 BASH_TIMEOUT = 90        # seconds per agent command
 GRADE_TIMEOUT = 120

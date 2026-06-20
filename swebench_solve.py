@@ -181,10 +181,22 @@ class SweBenchExecutor(Executor):
                 4: f"ERROR: {path} does not exist"}.get(code, f"ERROR: edit failed: {tail(err or out)}")
 
     # --- grading / capture ---
-    def run_fail_to_pass(self) -> dict:
+    def run_fail_to_pass(self, clean: bool = True) -> dict:
         """Run THIS instance's FAIL_TO_PASS tests in-container. exit 0 => they pass.
-        Compact verdict for the agent's run_test + the governed gate (the official
-        run_evaluation is the authoritative grade, incl. PASS_TO_PASS)."""
+        If clean=True (default), first RESET to the committed base+test_patch and RE-APPLY the agent's
+        captured source diff (dropping untracked junk + stale __pycache__) so the verdict matches what
+        the OFFICIAL grader sees (a fresh apply) — NOT the agent's drifted live tree. This kills the
+        false-negatives we hit (e.g. multi's Tester said FAIL while the captured patch actually resolved).
+        The agent's edits are tracked-file str_replaces, so they survive the reset (re-applied via the diff)."""
+        if clean:
+            diff = self.git_diff()  # full candidate patch (incl. new files) vs the test_patch commit
+            self._dexec("git reset --hard HEAD -q && git clean -fdq -e .venv && "
+                        "find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null; true",
+                        conda=False, timeout=120)
+            if diff.strip():
+                b = base64.b64encode(diff.encode()).decode()
+                self._dexec('printf %s "$D" | base64 -d | git apply --whitespace=nowarn',
+                            conda=False, env=[f"D={b}"], timeout=120)
         cmd = test_command(self.instance)
         code, out, err = self._dexec(cmd, timeout=GRADE_TEST_TIMEOUT, conda=True)
         blob = (out or "") + "\n" + (err or "")
@@ -245,8 +257,15 @@ def run_single(instance: dict, model: str, max_steps: int, verbose: bool, govern
     test_cmd = test_command(instance)
     messages = swe_messages(instance, test_cmd)
     trace, submitted, stop_reason, steps = [], None, "max_steps", 0
-    while steps < max_steps:
+    acted = False                    # has the agent edited SOURCE yet? (resolved ⟺ ≥1 edit)
+    act_by = max(8, max_steps // 2)  # anti-paralysis backstop (ported from multi's Coder): a reasoning
+    while steps < max_steps:         # model explores forever on big repos; nudge it to COMMIT an edit
         steps += 1
+        if not acted and steps > act_by:
+            messages.append({"role": "user", "content":
+                "You have NOT edited any SOURCE yet and you're past halfway on your step budget. STOP "
+                "exploring. Apply your single best str_replace fix to the SOURCE now, run the failing "
+                "test to verify, then submit once it passes. A tested edit beats more reading."})
         msg = _chat_with_backoff(client, model, messages, verbose)
         if msg is None:
             stop_reason = "api_error"; break
@@ -260,6 +279,8 @@ def run_single(instance: dict, model: str, max_steps: int, verbose: bool, govern
             stop_reason = "model_stopped"; break
         for tc in msg.tool_calls:
             name = tc.function.name
+            if name == "str_replace":
+                acted = True
             try:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
@@ -283,7 +304,7 @@ def run_single(instance: dict, model: str, max_steps: int, verbose: bool, govern
         if submitted is not None:
             stop_reason = "submitted"; break
     return {"submitted_summary": submitted, "stop_reason": stop_reason, "steps": steps,
-            "tool_trace": trace, "messages": messages}
+            "edited": acted, "tool_trace": trace, "messages": messages}
 
 
 # --------------------------------------------------------------------------- #
