@@ -14,6 +14,7 @@ predictions_*.jsonl
 swebench_report*.json
 gold.*.json
 mechanic-*.json
+validate-bestofn-*.json
 
 # internal docs & local project "brain" — NOT committed (repo stays code-only + README).
 # Kept on disk for Claude Code (auto-loads CLAUDE.md) and same-machine Cursor.

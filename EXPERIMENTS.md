@@ -12,7 +12,7 @@ Append a row after every sweep/run — never delete; correct with a dated note.
 > coverage (FULL = all instances / PARTIAL / SPOT = 1–few) · resolved · grade · notes. If a number is
 > later corrected (e.g. stale-cache, false-positive), strike it and add a dated correction — don't silently edit.
 >
-> _Last updated: 2026-06-26._
+> _Last updated: 2026-07-01._
 
 ---
 
@@ -84,11 +84,57 @@ best-of-N *produced* an officially-resolving patch on both hard instances a sing
 sweep (TODO #1–2). The real win of this exercise = two grading-harness bugs found + fixed (`5eaec28` parser
 grade, `6925254` content-addressed grade_official).
 
+### Selector-equivalence validation (TODO #1, 2026-07-01) — the gate the scorecard above lacked
+
+`bestofn_validate.py`: re-run best-of-N with the PARSER-FIXED grader (no early-stop, so ALL N candidates are
+sampled), then cross-check **each candidate's in-container verdict vs a FRESH official grade** (content-addressed
+so no stale cache), plus gold/empty oracles. GATE = 0 false-positives (in-container PASS but official not-resolved)
+AND 0 false-negatives (in-container fail but official RESOLVED).
+
+**django__django-11138** — base v4-flash, 60 steps, escalate ladder [flash,pro,pro], N=3. **GATE PASS ✅** (report
+`runs/bestofn_validate_django_django-11138_report.json`):
+
+| item | in-container | fresh official | verdict |
+|---|---|---|---|
+| cand0 (v4-flash, 7481ch) | PASS | RESOLVED | agree |
+| cand1 (v4-pro, 6111ch) | PASS | RESOLVED | agree |
+| cand2 (v4-pro, 7705ch) | PASS | RESOLVED | agree |
+| GOLD (oracle) | PASS | RESOLVED | agree |
+| EMPTY (oracle) | fail | not-resolved | agree |
+
+0 false-pos, 0 false-neg across 5 pairs. All 3 candidate patches show the raw summary `FAILED (failures=3, skipped=8)`
+(unrelated module tests) yet the parser scores only the F2P/P2P gold ids = PASS — and official confirms RESOLVED on
+every one. This is the EXACT false-negative the OLD exit-code grade produced (the prior django@40 row above:
+`n_passing=0`, resolved only via fallback); the parser fix (`5eaec28`) now matches official. All 3 candidates
+resolved this time → the live selector would pick cand0 (v4-flash) immediately, no fallback.
+
+**sympy__sympy-16597** — base v4-flash, 60 steps, escalate ladder, N=3. **GATE PASS ✅** (report
+`runs/bestofn_validate_sympy_sympy-16597_report.json`) — the stronger check, a genuine pass/fail MIX:
+
+| item | in-container | fresh official | verdict |
+|---|---|---|---|
+| cand0 (v4-flash, 1153ch) | PASS | RESOLVED | agree |
+| cand1 (v4-pro, 1203ch) | fail (1 test failing) | not-resolved | agree |
+| cand2 (v4-pro, 1153ch) | PASS | RESOLVED | agree |
+| GOLD (oracle) | PASS | RESOLVED | agree |
+| EMPTY (oracle) | fail | not-resolved | agree |
+
+0 false-pos, 0 false-neg. Both directions validated on REAL candidates: cand1 (v4-pro) left 1 test failing →
+correctly rejected in-container AND official (no false-neg); the two resolvers agree RESOLVED (no false-pos).
+This also retires the old stale-cache artifact — the prior sympy@60 run-record's `official_resolved=False` is now
+correctly RESOLVED under content-addressed grading. (Variance note: v4-flash cand0 resolved sympy this run with a
+tiny 1153-char fix; earlier notes had flash NOT cracking it — the selector correctly identifies the resolver either way.)
+
+**TODO #1 VERDICT: django 5/5 + sympy 5/5 = 10/10 pairs agree, 0 false-pos, 0 false-neg → the parser-fixed
+in-container selector is VALIDATED as official-equivalent.** A 3rd grading-harness bug was found + fixed en route:
+`de6cb5d` (TimeoutExpired returned undecoded bytes → str+bytes crash killed any run whose agent command timed out;
+would have bitten the bestofn/multi sweeps). Unblocks TODO #2 (full `--engine bestofn --escalate` sweep).
+
 ---
 
 ## 4. Honest coverage gaps (as of 2026-06-26)
 - **multi was NEVER full-swept on SWE-bench** — only 4-instance ladder (2/4, tied single) + 1 django spot. No multi SWE-bench number exists.
 - **governed never run on SWE-bench** — the single/multi/governed comparison lives only on local v2/v3.
-- **best-of-N**: live selection validated N=2 only; no full sweep.
+- **best-of-N**: SELECTOR now validated official-equivalent (TODO #1, 2026-07-01: django 5/5 + sympy 5/5, 0 false-pos/neg — see §3). A full `--engine bestofn --escalate` sweep (TODO #2) is the remaining item to claim a best-of-N *resolution lift*.
 - The eval-gate CI **resolution job has never executed on GitHub** (needs a self-hosted runner for the Docker eval).
 - Langfuse **trace delivery** wired but never live-confirmed (no project keys).
