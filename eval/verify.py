@@ -74,7 +74,14 @@ def run(cmd, cwd=None, env=None, timeout=120, shell=False):
         )
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired as e:
-        return 124, e.stdout or "", f"TIMEOUT after {timeout}s"
+        # On timeout, CPython attaches RAW BYTES to e.stdout/e.stderr even under text=True/encoding=
+        # (the decode only happens on the normal return path). Callers that concatenate the output as
+        # str then crash with "can't concat str to bytes" (solve.Executor.bash did, killing a whole
+        # SWE-bench run when an emulated `bin/test` exceeded BASH_TIMEOUT). Decode here, and surface the
+        # partial stdout/stderr so the agent still sees what the command was doing when it hung.
+        def _dec(x):
+            return x.decode("utf-8", errors="replace") if isinstance(x, (bytes, bytearray)) else (x or "")
+        return 124, _dec(e.stdout), f"TIMEOUT after {timeout}s" + (f"\n{_dec(e.stderr)}" if e.stderr else "")
     except FileNotFoundError as e:
         return 127, "", str(e)
 
