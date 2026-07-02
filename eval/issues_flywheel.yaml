@@ -1,0 +1,22 @@
+issues:
+- id: furl-multiat-fw
+  repo: gruns/furl
+  url: https://github.com/gruns/furl/issues/163
+  issue: 163
+  clone: https://github.com/gruns/furl.git
+  base_commit: 46d9ea79c98bb14b970a199fb924705d024f29ad
+  repro_verified: true
+  bug_type: wrong-value
+  bug_summary: furl mis-parses a URL whose userinfo itself contains an '@'. For a
+    URL like 'http://user:pass@word@host.com/path', furl treats 'word@host.com' as
+    the host, i.e. it splits the netloc on the FIRST '@' i
+  repro: generated
+  fix_hint: netloc setter split('@',1) should be rsplit('@',1)
+  fix_size: unknown
+  tier: flywheel
+  test_framework: pytest
+  install: pip install -e .
+  test_cmd: pytest -q
+  flags:
+  - auto-generated
+  source_trace: (demo)
