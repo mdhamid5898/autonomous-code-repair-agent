@@ -1,8 +1,17 @@
 # Mechanic — Autonomous Code-Repair Agent
 
+[![eval-gate](https://github.com/mdhamid5898/autonomous-code-repair-agent/actions/workflows/eval-gate.yml/badge.svg)](https://github.com/mdhamid5898/autonomous-code-repair-agent/actions/workflows/eval-gate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Give it a failing GitHub issue; an LLM agent localizes the bug, edits the source in a sandbox, and
 re-runs the test suite until it goes **red → green** — gated by a **deterministic test pass, never the
 model's say-so**. Evaluated on real bugs with the **official SWE-bench Verified grader**.
+
+<p align="center">
+  <img src="assets/demo.svg" alt="Replay of a real Mechanic run: failing test → grep localization → one-line fix → deterministic red-to-green gate → RESOLVED" width="740">
+</p>
+<p align="center"><sub><i>Replay of a real recorded run (<code>runs/furl-163_*.json</code>): localize with grep, patch one line,
+prove red→green, check the full suite against a stashed baseline, submit — accepted by the deterministic gate.</i></sub></p>
 
 > ### Headline
 > On a deliberately hard, **multi-file** slice of SWE-bench Verified (2–21 source files across

@@ -1,0 +1,76 @@
+<svg viewBox="0 0 740 372" width="740" height="372" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" role="img" aria-label="Animated replay of a real Mechanic run resolving furl-163: failing test, grep localization, one-line fix, deterministic red-to-green gate, resolved.">
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12.5px; fill: #c9d1d9; }
+    .ttl { font-size: 11.5px; fill: #8b949e; }
+    .dim { fill: #8b949e; }
+    .grn { fill: #3fb950; }
+    .red { fill: #f85149; }
+    .cyn { fill: #58a6ff; }
+    .ylw { fill: #d29922; }
+    .b   { font-weight: 600; }
+    .l0  { animation: l0  26s linear infinite; }
+    .l1  { animation: l1  26s linear infinite; }
+    .l2  { animation: l2  26s linear infinite; }
+    .l3  { animation: l3  26s linear infinite; }
+    .l4  { animation: l4  26s linear infinite; }
+    .l5  { animation: l5  26s linear infinite; }
+    .l6  { animation: l6  26s linear infinite; }
+    .l7  { animation: l7  26s linear infinite; }
+    .l8  { animation: l8  26s linear infinite; }
+    .l9  { animation: l9  26s linear infinite; }
+    .l10 { animation: l10 26s linear infinite; }
+    .l11 { animation: l11 26s linear infinite; }
+    .l12 { animation: l12 26s linear infinite; }
+    .l13 { animation: l13 26s linear infinite; }
+    .l14 { animation: l14 26s linear infinite; }
+    @keyframes l0  { 0%, 2.3%  { opacity: 0 } 2.8%,  95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l1  { 0%, 7.7%  { opacity: 0 } 8.2%,  95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l2  { 0%, 13.1% { opacity: 0 } 13.6%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l3  { 0%, 16.9% { opacity: 0 } 17.4%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l4  { 0%, 22.3% { opacity: 0 } 22.8%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l5  { 0%, 27.7% { opacity: 0 } 28.2%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l6  { 0%, 31.5% { opacity: 0 } 32.0%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l7  { 0%, 34.6% { opacity: 0 } 35.1%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l8  { 0%, 40.0% { opacity: 0 } 40.5%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l9  { 0%, 45.4% { opacity: 0 } 45.9%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l10 { 0%, 49.2% { opacity: 0 } 49.7%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l11 { 0%, 54.6% { opacity: 0 } 55.1%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l12 { 0%, 57.7% { opacity: 0 } 58.2%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l13 { 0%, 63.0% { opacity: 0 } 63.5%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+    @keyframes l14 { 0%, 70.0% { opacity: 0 } 70.5%, 95% { opacity: 1 } 96.5%, 100% { opacity: 0 } }
+  </style>
+
+  <!-- terminal chrome -->
+  <rect x="1" y="1" width="738" height="370" rx="9" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <rect x="1.75" y="1.75" width="736.5" height="32" rx="8" fill="#161b22"/>
+  <circle cx="22" cy="18" r="5.5" fill="#ff5f56"/>
+  <circle cx="40" cy="18" r="5.5" fill="#ffbd2e"/>
+  <circle cx="58" cy="18" r="5.5" fill="#27c93f"/>
+  <text class="ttl" x="370" y="22" text-anchor="middle">mechanic — solve.py · replay of a real recorded run (furl-163, 14 steps)</text>
+
+  <!-- transcript -->
+  <text class="l0" x="22" y="62"><tspan class="grn b">$</tspan> python solve.py --issue furl-163 --verbose</text>
+
+  <text class="l1" x="22" y="82"><tspan class="dim">&#9656; bash    </tspan>pytest test_mechanic_furl_163.py  <tspan class="red b">&#8594; 1 failed</tspan><tspan class="dim">   (red on base &#10007;)</tspan></text>
+
+  <text class="l2" x="22" y="102"><tspan class="dim">&#9656; bash    </tspan>grep -n "split.*@.*1" furl/furl.py</text>
+  <text class="l3" x="94" y="122"><tspan class="ylw">furl/furl.py:1509:</tspan>  userpass, netloc = netloc.split('@', 1)</text>
+
+  <text class="l4" x="22" y="142"><tspan class="dim">&#9656; bash    </tspan>sed -n '1500,1520p' furl/furl.py  <tspan class="dim"># read the netloc setter</tspan></text>
+
+  <text class="l5" x="22" y="162"><tspan class="dim">&#9656; edit    </tspan>str_replace furl/furl.py</text>
+  <text class="l6" x="94" y="182"><tspan class="red">- userpass, netloc = netloc.split('@', 1)</tspan></text>
+  <text class="l7" x="94" y="202"><tspan class="grn">+ userpass, netloc = netloc.rsplit('@', 1)</tspan></text>
+
+  <text class="l8" x="22" y="222"><tspan class="dim">&#9656; bash    </tspan>pytest test_mechanic_furl_163.py  <tspan class="grn b">&#8594; 1 passed &#10003;</tspan></text>
+
+  <text class="l9" x="22" y="242"><tspan class="dim">&#9656; bash    </tspan>git stash &#183; pytest tests/test_furl.py &#183; git stash pop</text>
+  <text class="l10" x="94" y="262"><tspan class="dim">suite failure exists on base too — pre-existing, not introduced by this patch</tspan></text>
+
+  <text class="l11" x="22" y="282"><tspan class="dim">&#9656; submit  </tspan>"netloc setter split('@', 1) cuts at the FIRST '@' — userinfo with an</text>
+  <text class="l12" x="94" y="302">embedded '@' leaks into the host; rsplit('@', 1) fixes it (RFC 3986)"</text>
+
+  <text class="l13" x="22" y="322"><tspan class="cyn b">&#9656; gate    </tspan>pristine repro re-copied &#183; re-graded <tspan class="grn b">&#8594; PASSED</tspan><tspan class="dim">  (never the model's say-so)</tspan></text>
+
+  <text class="l14" x="22" y="348"><tspan class="grn b">furl-163: RESOLVED &#10003;</tspan>   red &#8594; green   <tspan class="dim">&#183;  14 steps  &#183;  deepseek-chat  &#183;  stop=submitted</tspan></text>
+</svg>
