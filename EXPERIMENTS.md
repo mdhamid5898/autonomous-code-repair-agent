@@ -12,7 +12,7 @@ Append a row after every sweep/run — never delete; correct with a dated note.
 > coverage (FULL = all instances / PARTIAL / SPOT = 1–few) · resolved · grade · notes. If a number is
 > later corrected (e.g. stale-cache, false-positive), strike it and add a dated correction — don't silently edit.
 >
-> _Last updated: 2026-07-01._
+> _Last updated: 2026-07-02._
 
 ---
 
@@ -22,6 +22,7 @@ Subset = `eval/swebench_subset.json` (large-repo, 2–21 source files, 7 repos).
 
 | date | engine | model | budget | coverage | resolved | notes |
 |---|---|---|---|---|---|---|
+| 2026-07-02 | **bestofn (escalate)** | flash→pro→pro | 60 steps/attempt, N=3, early-stop | **FULL (14)** | **12/14 (86%)** | ≤3f 9/9 · ≥4f 3/5; ~$0.055/run avg; 3.5h wall; strict superset of pro-single (+django-11138); 1 in-container false-pos (sympy-13091, FLAKY patch) caught by the official gate → flake guard added (`ea67915`) |
 | 2026-06-20 | solve (single) | deepseek-v4-pro | 60 steps | **FULL (14)** | **11/14 (79%)** | ≤3f 9/9 · ≥4f 2/5; ~$0.07/run |
 | 2026-06-20 | solve (single) | deepseek-v4-flash | 60 steps | **FULL (14)** | **9/14 (64%)** | ≤3f 8/9 · ≥4f 1/5; ~$0.03/run |
 | 2026-06-20 | solve (single) | deepseek-chat | 60 steps | PARTIAL (4 ladder) | 2/4 | early ladder; superseded by v4 runs |
@@ -30,24 +31,27 @@ Subset = `eval/swebench_subset.json` (large-repo, 2–21 source files, 7 repos).
 | 2026-06-20 | governed | — | — | **NONE** | — | never run on SWE-bench (local only) |
 | 2026-06-20 | bestofn (flash→pro) | escalate | 40–60 | SPOT (2) | see §3 | live selection thin — NOT a clean win |
 
-### Per-instance — the two FULL single sweeps
-| instance | files | v4-flash | v4-pro |
-|---|---|---|---|
-| astropy-13398 | 4 | ✗ | ✗ |
-| astropy-14369 | 2 | ✓ | ✓ |
-| django-11138 | 4 | ✗ | ✗ (submitted wrong) |
-| django-11532 | 5 | ✓ | ✓ |
-| matplotlib-14623 | 3 | ✓ | ✓ |
-| matplotlib-25775 | 3 | ✓ | ✓ |
-| scikit-learn-12682 | 2 | ✓ | ✓ |
-| scikit-learn-25102 | 2 | ✓ | ✓ |
-| sphinx-7590 | 3 | ✗ | ✓ |
-| sphinx-10673 | 3 | ✓ | ✓ |
-| sympy-13091 | 21 | ✗ | ✗ |
-| sympy-16597 | 6 | ✗ | ✓ |
-| xarray-3095 | 2 | ✓ | ✓ |
-| xarray-3305 | 2 | ✓ | ✓ |
-| **TOTAL** | | **9/14** | **11/14** |
+### Per-instance — the three FULL sweeps (single flash · single pro · best-of-N escalate)
+| instance | files | v4-flash | v4-pro | bestofn (win#) |
+|---|---|---|---|---|
+| astropy-13398 | 4 | ✗ | ✗ | ✗ (0 pass, 3 attempts, fallback) |
+| astropy-14369 | 2 | ✓ | ✓ | ✓ (#0 flash) |
+| django-11138 | 4 | ✗ | ✗ (submitted wrong) | **✓ (#1 pro — the unlock: no single agent resolved it)** |
+| django-11532 | 5 | ✓ | ✓ | ✓ (#0 flash) |
+| matplotlib-14623 | 3 | ✓ | ✓ | ✓ (#0 flash) |
+| matplotlib-25775 | 3 | ✓ | ✓ | ✓ (#0 flash) |
+| scikit-learn-12682 | 2 | ✓ | ✓ | ✓ (#0 flash) |
+| scikit-learn-25102 | 2 | ✓ | ✓ | ✓ (#0 flash) |
+| sphinx-7590 | 3 | ✗ | ✓ | ✓ (#1 pro, 71min) |
+| sphinx-10673 | 3 | ✓ | ✓ | ✓ (#0 flash) |
+| sympy-13091 | 21 | ✗ | ✗ | ✗ (in-container FALSE-POS on a flaky patch; official refuted — see §3) |
+| sympy-16597 | 6 | ✗ | ✓ | ✓ (#1 pro) |
+| xarray-3095 | 2 | ✓ | ✓ | ✓ (#0 flash) |
+| xarray-3305 | 2 | ✓ | ✓ | ✓ (#0 flash) |
+| **TOTAL** | | **9/14** | **11/14** | **12/14** |
+
+bestofn = pro-single's 11 **+ django-11138**, zero regressions (strict superset). 10/14 resolved on the CHEAP
+attempt 0 (escalation spent only where needed → ~$0.055/run avg, cheaper than pro-single at higher resolution).
 
 ---
 
@@ -130,11 +134,31 @@ in-container selector is VALIDATED as official-equivalent.** A 3rd grading-harne
 `de6cb5d` (TimeoutExpired returned undecoded bytes → str+bytes crash killed any run whose agent command timed out;
 would have bitten the bestofn/multi sweeps). Unblocks TODO #2 (full `--engine bestofn --escalate` sweep).
 
+### Full-sweep selection scorecard (TODO #2, 2026-07-02) — selector at scale + ONE flaky false-positive
+
+Full `--engine bestofn --escalate` sweep (N=3, early-stop, 60 steps/attempt) = **12/14 (86%)**, every "resolved"
+gated on a fresh official grade inline (see §1 tables). Selector behavior across 14 live instances:
+- **12 selector-PASS → all 12 officially RESOLVED** (10 at cheap attempt #0; django-11138 + sphinx-7590 +
+  sympy-16597 at escalated attempt #1). **django-11138 is the headline: selection — not fallback — picked the
+  escalated v4-pro patch, on the instance NO single agent resolved** (flash wrong, pro wrong-fix/paralysis).
+- **astropy-13398: selector correctly rejected all 3 attempts** (n_pass=0, largest-patch fallback, official ✗).
+- **sympy-13091 (21f): the ONE disagreement — an in-container FALSE-POSITIVE on a genuinely FLAKY patch.**
+  The candidate's `__eq__` edits introduce a RecursionError that only fires on a hash-bucket collision in
+  `sympify`'s `a in sympy_classes` — i.e. failure depends on per-process hash randomization. Re-grading the
+  IDENTICAL patch 3× in-container: **False, True, True** (even pass-counts wobble). Selection early-stopped on
+  a lucky pass; the official grader rolled a fail (P2P `test_bug_sqrt` RecursionError) and refuted it. NOT a
+  parser/selector-logic bug (TODO #1's 10/10 equivalence holds for deterministic patches) — a nondeterministic
+  patch is a different failure mode. **The official-gate discipline caught it → the 12/14 number is sound.**
+- **Mitigation (post-sweep, `ea67915`): flake guard** — a passing candidate must confirm **2/2** in-container
+  grades to win/early-stop; fallback now prefers a flaky (≥1-pass) candidate over blind largest-patch. A
+  1-in-3-fail flaky patch rarely survives 2/2. (Note: the 12/14 sweep ran pre-guard; the guard only makes
+  selection stricter — confirmed winners stay winners.)
+
 ---
 
-## 4. Honest coverage gaps (as of 2026-06-26)
-- **multi was NEVER full-swept on SWE-bench** — only 4-instance ladder (2/4, tied single) + 1 django spot. No multi SWE-bench number exists.
+## 4. Honest coverage gaps (as of 2026-07-02)
+- **multi was NEVER full-swept on SWE-bench** — only 4-instance ladder (2/4, tied single) + 1 django spot. No multi SWE-bench number exists. **TODO #3 sweep launching.**
 - **governed never run on SWE-bench** — the single/multi/governed comparison lives only on local v2/v3.
-- **best-of-N**: SELECTOR now validated official-equivalent (TODO #1, 2026-07-01: django 5/5 + sympy 5/5, 0 false-pos/neg — see §3). A full `--engine bestofn --escalate` sweep (TODO #2) is the remaining item to claim a best-of-N *resolution lift*.
+- **best-of-N: DONE at scale** — selector validated (TODO #1, 10/10) AND full-swept (TODO #2, **12/14**, every resolve officially gated). Residual caveats: pass@1 (single sweep, no variance bars); the sweep predates the flake guard (`ea67915`); 1 flaky false-pos observed live (caught by the official gate).
 - The eval-gate CI **resolution job has never executed on GitHub** (needs a self-hosted runner for the Docker eval).
 - Langfuse **trace delivery** wired but never live-confirmed (no project keys).
