@@ -400,23 +400,39 @@ def run_best_of_n(instance: dict, model: str, max_steps: int, verbose: bool,
         patch = ex.git_diff()
         gv = (ex.grade_patch(patch) if patch.strip()
               else {"resolved": False, "exit": -1, "summary": "empty patch"})
+        # FLAKE GUARD: a passing grade must CONFIRM on a second independent run before it can win.
+        # Earned by a live false-positive (sympy-13091 full-sweep): a candidate patch introduced a
+        # hash-randomization-dependent RecursionError (__eq__ recursion only on a set-bucket collision),
+        # so the SAME patch graded PASS/FAIL nondeterministically across runs (measured 1-fail-in-3);
+        # selection early-stopped on a lucky pass that the official grader then refuted. A flaky patch
+        # rarely passes twice, so requiring 2/2 keeps selection cheap while filtering nondeterminism.
+        confirmed, flaky, confirm_summary = bool(gv["resolved"]), False, None
+        if gv["resolved"]:
+            gv2 = ex.grade_patch(patch)
+            confirmed, confirm_summary = bool(gv2["resolved"]), gv2.get("summary")
+            flaky = not confirmed
         candidates.append({"i": i, "model": attempt_model, "temperature": temp, "patch": patch,
                            "patch_empty": not patch.strip(),
-                           "incontainer_pass": bool(gv["resolved"]), "grade_summary": gv.get("summary"),
+                           "incontainer_pass": confirmed, "flaky": flaky,
+                           "grade_summary": gv.get("summary"), "confirm_summary": confirm_summary,
                            "steps": meta.get("steps"), "stop_reason": meta.get("stop_reason"),
                            "submitted_summary": meta.get("submitted_summary")})
         if verbose:
             print(f"  [best-of-N cand {i} ({attempt_model} @T={temp}): "
-                  f"{'PASS ✅' if gv['resolved'] else 'fail'} "
+                  f"{'PASS ✅ (confirmed 2/2)' if confirmed else ('FLAKY ⚠️ (pass then fail)' if flaky else 'fail')} "
                   f"({'empty' if not patch.strip() else str(len(patch)) + 'ch'}, {meta.get('steps')} steps, "
                   f"{gv.get('summary')})]")
-        if gv["resolved"] and early_stop:
-            break  # first passing candidate wins — stop sampling (the cost-efficient default)
+        if confirmed and early_stop:
+            break  # first CONFIRMED candidate wins — stop sampling (the cost-efficient default)
 
     winner = next((c for c in candidates if c["incontainer_pass"]), None)
-    if winner is None:  # nothing passed — submit the most substantive attempt for the official grade
+    if winner is None:
+        # Nothing confirmed — prefer a FLAKY candidate (passed >=1 in-container grade = strictly more
+        # evidence of flipping F2P than any never-passing patch), else the most substantive attempt.
+        flaky_cands = [c for c in candidates if c.get("flaky")]
         non_empty = [c for c in candidates if not c["patch_empty"]]
-        winner = max(non_empty, key=lambda c: len(c["patch"])) if non_empty else candidates[-1]
+        winner = (flaky_cands[0] if flaky_cands
+                  else max(non_empty, key=lambda c: len(c["patch"])) if non_empty else candidates[-1])
     ex.reset_clean()
     ex.apply_patch(winner["patch"])  # leave winner applied for capture + official grade
     return {"submitted_summary": winner.get("submitted_summary"),
