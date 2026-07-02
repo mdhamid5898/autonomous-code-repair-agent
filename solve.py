@@ -212,6 +212,15 @@ class Executor:
         return p
 
     def bash(self, cmd: str) -> str:
+        # Opt-in prompt-injection guard (TODO #7): when MECHANIC_GUARD=1, a deterministic policy
+        # refuses dangerous shell (exfiltration/secret-access/destruction/privilege/pipe-to-shell)
+        # BEFORE it runs. Default OFF so existing runs/measurements are byte-identical; 0 false-
+        # positives on normal dev commands (see injection_eval), so it's safe to enable for untrusted issues.
+        if os.environ.get("MECHANIC_GUARD") == "1":
+            from injection_defense import guard_bash
+            ok, msg = guard_bash(cmd)
+            if not ok:
+                return f"(exit 126)\n{msg}"   # 126 = command found but not permitted
         code, out, err = self.exec_raw(cmd)
         body = (out or "") + (("\n[stderr]\n" + err) if err else "")
         if len(body) > TOOL_OUTPUT_CAP:
