@@ -142,9 +142,6 @@ DEFENDED block rate (hardened prompt + command-guard): 18/18 = 100%
 guard block rate on corpus + held-out: 31/32 = 97%   |  false-positives on dev commands: 0/14
 ```
 
-*(To capture an animated GIF of any of these, record the command with [asciinema](https://asciinema.org)
-and export to GIF.)*
-
 ## Honest caveats
 
 - **pass@1** on the SWE-bench sweeps — margins of ±1 instance are within run-to-run variance (no error bars).
