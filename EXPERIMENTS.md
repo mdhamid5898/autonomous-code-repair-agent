@@ -25,33 +25,41 @@ Subset = `eval/swebench_subset.json` (large-repo, 2–21 source files, 7 repos).
 | 2026-07-02 | **bestofn (escalate)** | flash→pro→pro | 60 steps/attempt, N=3, early-stop | **FULL (14)** | **12/14 (86%)** | ≤3f 9/9 · ≥4f 3/5; ~$0.055/run avg; 3.5h wall; strict superset of pro-single (+django-11138); 1 in-container false-pos (sympy-13091, FLAKY patch) caught by the official gate → flake guard added (`ea67915`) |
 | 2026-06-20 | solve (single) | deepseek-v4-pro | 60 steps | **FULL (14)** | **11/14 (79%)** | ≤3f 9/9 · ≥4f 2/5; ~$0.07/run |
 | 2026-06-20 | solve (single) | deepseek-v4-flash | 60 steps | **FULL (14)** | **9/14 (64%)** | ≤3f 8/9 · ≥4f 1/5; ~$0.03/run |
+| 2026-07-02 | **multi** | deepseek-v4-pro | 4 iters | **FULL (14)** | **11/14 (79%)** | TIES pro-single in count, NOT a superset: +sympy-13091 but −sklearn-12682 & −sympy-16597 (2 regressions); ≥3f 7/9 |
 | 2026-06-20 | solve (single) | deepseek-chat | 60 steps | PARTIAL (4 ladder) | 2/4 | early ladder; superseded by v4 runs |
-| 2026-06-20 | multi | deepseek-chat | 4 iters | PARTIAL (4 ladder) | 2/4 | **tied single on the same 4** |
-| 2026-06-20 | multi | deepseek-v4-pro | 4 iters | SPOT (1: django-11138) | 1/1 | resolved where single-v4-pro submitted wrong |
+| 2026-06-20 | multi | deepseek-chat | 4 iters | PARTIAL (4 ladder) | 2/4 | superseded by the FULL multi-v4-pro run above |
+| 2026-06-20 | multi | deepseek-v4-pro | 4 iters | SPOT (1: django-11138) | 1/1 | superseded by the FULL multi-v4-pro run above |
 | 2026-06-20 | governed | — | — | **NONE** | — | never run on SWE-bench (local only) |
-| 2026-06-20 | bestofn (flash→pro) | escalate | 40–60 | SPOT (2) | see §3 | live selection thin — NOT a clean win |
 
-### Per-instance — the three FULL sweeps (single flash · single pro · best-of-N escalate)
-| instance | files | v4-flash | v4-pro | bestofn (win#) |
-|---|---|---|---|---|
-| astropy-13398 | 4 | ✗ | ✗ | ✗ (0 pass, 3 attempts, fallback) |
-| astropy-14369 | 2 | ✓ | ✓ | ✓ (#0 flash) |
-| django-11138 | 4 | ✗ | ✗ (submitted wrong) | **✓ (#1 pro — the unlock: no single agent resolved it)** |
-| django-11532 | 5 | ✓ | ✓ | ✓ (#0 flash) |
-| matplotlib-14623 | 3 | ✓ | ✓ | ✓ (#0 flash) |
-| matplotlib-25775 | 3 | ✓ | ✓ | ✓ (#0 flash) |
-| scikit-learn-12682 | 2 | ✓ | ✓ | ✓ (#0 flash) |
-| scikit-learn-25102 | 2 | ✓ | ✓ | ✓ (#0 flash) |
-| sphinx-7590 | 3 | ✗ | ✓ | ✓ (#1 pro, 71min) |
-| sphinx-10673 | 3 | ✓ | ✓ | ✓ (#0 flash) |
-| sympy-13091 | 21 | ✗ | ✗ | ✗ (in-container FALSE-POS on a flaky patch; official refuted — see §3) |
-| sympy-16597 | 6 | ✗ | ✓ | ✓ (#1 pro) |
-| xarray-3095 | 2 | ✓ | ✓ | ✓ (#0 flash) |
-| xarray-3305 | 2 | ✓ | ✓ | ✓ (#0 flash) |
-| **TOTAL** | | **9/14** | **11/14** | **12/14** |
+### Per-instance — the FOUR FULL sweeps (single flash · single pro · best-of-N escalate · multi pro)
+| instance | files | v4-flash | v4-pro | bestofn (win#) | multi (iters) |
+|---|---|---|---|---|---|
+| astropy-13398 | 4 | ✗ | ✗ | ✗ (fallback) | ✗ (4) |
+| astropy-14369 | 2 | ✓ | ✓ | ✓ (#0) | ✓ (3) |
+| django-11138 | 4 | ✗ | ✗ (wrong) | **✓ (#1 pro)** | ✓ (4) |
+| django-11532 | 5 | ✓ | ✓ | ✓ (#0) | ✓ (1) |
+| matplotlib-14623 | 3 | ✓ | ✓ | ✓ (#0) | ✓ (1) |
+| matplotlib-25775 | 3 | ✓ | ✓ | ✓ (#0) | ✓ (2) |
+| scikit-learn-12682 | 2 | ✓ | ✓ | ✓ (#0) | **✗ (4) ← multi REGRESSION** |
+| scikit-learn-25102 | 2 | ✓ | ✓ | ✓ (#0) | ✓ (2) |
+| sphinx-7590 | 3 | ✗ | ✓ | ✓ (#1 pro) | ✓ (3) |
+| sphinx-10673 | 3 | ✓ | ✓ | ✓ (#0) | ✓ (2) |
+| sympy-13091 | 21 | ✗ | ✗ | ✗ (flaky false-pos, official ✗ — §3) | **✓ (2) — multi-only; stable 4/4 re-grade** |
+| sympy-16597 | 6 | ✗ | ✓ | ✓ (#1 pro) | **✗ (4) ← multi REGRESSION** |
+| xarray-3095 | 2 | ✓ | ✓ | ✓ (#0) | ✓ (1) |
+| xarray-3305 | 2 | ✓ | ✓ | ✓ (#0) | ✓ (2) |
+| **TOTAL** | | **9/14** | **11/14** | **12/14** | **11/14** |
 
-bestofn = pro-single's 11 **+ django-11138**, zero regressions (strict superset). 10/14 resolved on the CHEAP
-attempt 0 (escalation spent only where needed → ~$0.055/run avg, cheaper than pro-single at higher resolution).
+**VERDICT (the headline of the whole SWE-bench arc): best-of-N (12/14) > multi (11/14) = single-pro (11/14).**
+- **best-of-N is a strict SUPERSET of pro-single** (its 11 **+ django-11138**, 0 regressions); 10/14 resolved on
+  the CHEAP attempt #0 (escalation spent only where needed → ~$0.055/run avg — cheaper than pro-single @ ~$0.07
+  AND higher resolution). "More attempts, cheap→strong" is the lever.
+- **multi merely TIES single-pro in COUNT and is NOT a superset:** +sympy-13091 (a stable patch where best-of-N
+  only found a flaky one) but **−scikit-learn-12682 AND −sympy-16597 — two clean REGRESSIONS on instances
+  single-pro AND best-of-N both resolved.** Decomposition burned its 4 re-plan rounds (iters=4) on both misses.
+- **astropy-13398 defeats all four engines** (the genuine capability frontier of this subset).
+- Confirms the project's repeated finding, now with the previously-missing multi number on the FULL subset:
+  **the levers are model capability + more-attempts (best-of-N), NOT role-decomposition.**
 
 ---
 
@@ -157,8 +165,8 @@ gated on a fresh official grade inline (see §1 tables). Selector behavior acros
 ---
 
 ## 4. Honest coverage gaps (as of 2026-07-02)
-- **multi was NEVER full-swept on SWE-bench** — only 4-instance ladder (2/4, tied single) + 1 django spot. No multi SWE-bench number exists. **TODO #3 sweep launching.**
-- **governed never run on SWE-bench** — the single/multi/governed comparison lives only on local v2/v3.
+- **multi FULL-swept: DONE** (TODO #3, 11/14) — the previously-missing SWE-bench multi number now exists. Result: multi ties single-pro, loses to best-of-N, and regresses on 2 instances → decomposition is not the lever (see §1 verdict). sympy-13091 multi-win re-verified stable (4/4 in-container re-grade; not the flaky false-pos best-of-N hit).
+- **governed never run on SWE-bench** — the single/multi/governed comparison lives only on local v2/v3 (low priority; governed≈single already established there).
 - **best-of-N: DONE at scale** — selector validated (TODO #1, 10/10) AND full-swept (TODO #2, **12/14**, every resolve officially gated). Residual caveats: pass@1 (single sweep, no variance bars); the sweep predates the flake guard (`ea67915`); 1 flaky false-pos observed live (caught by the official gate).
 - The eval-gate CI **resolution job has never executed on GitHub** (needs a self-hosted runner for the Docker eval).
 - Langfuse **trace delivery** wired but never live-confirmed (no project keys).
