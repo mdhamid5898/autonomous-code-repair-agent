@@ -26,8 +26,10 @@ on:
       model:
         description: "model id (make_client routes deepseek*)"
         default: deepseek-v4-flash
-  schedule:
-    - cron: "0 7 * * 1"   # Mondays 07:00 UTC — weekly regression alarm
+  # NOTE: no `schedule:` on purpose. The resolution job below needs a paid API key (and, for the
+  # SWE-bench tier, a self-hosted Docker/x86 runner), so an unattended weekly cron would just fail
+  # red on a missing secret and turn the README badge red. Run it MANUALLY when you want a real
+  # eval — Actions tab → "eval-gate" → "Run workflow" (see the resolution job for the key setup).
 
 jobs:
   code-health:
@@ -47,9 +49,11 @@ jobs:
 
   resolution:
     # Real eval-gate: drive the agent over the benchmark, fail if resolution regressed.
-    # Off PRs (needs DEEPSEEK_API_KEY + minutes of API time). The SWE-bench tier additionally
-    # needs Docker + linux/amd64 emulation -> run that one on a self-hosted runner (see README).
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    # MANUAL ONLY (workflow_dispatch) — never on PR/push/schedule. It needs DEEPSEEK_API_KEY + minutes
+    # of API time; the SWE-bench tier additionally needs Docker + linux/amd64 emulation (self-hosted
+    # runner, see README). To run it: add a repo secret DEEPSEEK_API_KEY (Settings → Secrets and
+    # variables → Actions), then Actions tab → this workflow → "Run workflow".
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     env:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
