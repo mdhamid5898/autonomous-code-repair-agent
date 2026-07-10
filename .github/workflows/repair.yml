@@ -1,0 +1,82 @@
+name: mechanic-repair
+
+# Trigger the DEPLOYED Mechanic service (service.py, FastAPI) to repair an issue — the agent
+# as a CI/CD step instead of a laptop script. Two ways in:
+#   * manually (workflow_dispatch) with a benchmark issue id, or
+#   * automatically when an issue is labeled `mechanic` (its title is taken as the issue id).
+#
+# The Action does NOT run the model itself — it calls the service over HTTP, so the heavy
+# agent/Docker deps live in the deployment, not the runner. Configure two repo secrets:
+#   MECHANIC_SERVICE_URL    e.g. https://mechanic.example.com   (where service.py is deployed)
+#   MECHANIC_SERVICE_TOKEN  the shared secret checked by /solve's X-Mechanic-Token
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "benchmark issue id to repair (e.g. furl-163)"
+        required: true
+      open_pr:
+        description: "open a pull request for the fix"
+        type: boolean
+        default: true
+  issues:
+    types: [labeled]
+
+jobs:
+  repair:
+    # manual dispatch, or an issue labeled exactly `mechanic`
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'mechanic' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve inputs
+        id: in
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "issue=${{ inputs.issue }}"     >> "$GITHUB_OUTPUT"
+            echo "open_pr=${{ inputs.open_pr }}"  >> "$GITHUB_OUTPUT"
+          else
+            # issue-labeled path: the issue TITLE is the benchmark id
+            echo "issue=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"
+            echo "open_pr=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Guard — service must be configured
+        run: |
+          if [ -z "${{ secrets.MECHANIC_SERVICE_URL }}" ]; then
+            echo "::error::MECHANIC_SERVICE_URL secret not set — deploy service.py and add the secret"; exit 1
+          fi
+
+      - name: Trigger repair on the Mechanic service
+        id: solve
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS --fail-with-body -X POST "${{ secrets.MECHANIC_SERVICE_URL }}/solve" \
+            -H "content-type: application/json" \
+            -H "X-Mechanic-Token: ${{ secrets.MECHANIC_SERVICE_TOKEN }}" \
+            -d "$(jq -nc \
+                  --arg issue "${{ steps.in.outputs.issue }}" \
+                  --argjson open_pr ${{ steps.in.outputs.open_pr }} \
+                  --argjson execute_pr true \
+                  '{issue:$issue, open_pr:$open_pr, execute_pr:$execute_pr}')")
+          echo "$resp" | jq .
+          echo "resolved=$(echo "$resp" | jq -r '.resolved')" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$(echo "$resp" | jq -r '.pr.url // empty')" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the outcome on the issue
+        if: ${{ github.event_name == 'issues' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ steps.solve.outputs.resolved }}" = "true" ]; then
+            body="🔧 Mechanic resolved this (red→green under the deterministic gate)."
+            [ -n "${{ steps.solve.outputs.pr_url }}" ] && body="$body PR: ${{ steps.solve.outputs.pr_url }}"
+          else
+            body="⚠️ Mechanic could not resolve this within the step budget."
+          fi
+          gh issue comment "${{ github.event.issue.number }}" --body "$body"
+
+      - name: Fail the run if unresolved
+        run: |
+          [ "${{ steps.solve.outputs.resolved }}" = "true" ] || {
+            echo "::error::agent did not resolve ${{ steps.in.outputs.issue }}"; exit 1; }
