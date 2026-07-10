@@ -39,7 +39,7 @@ jobs:
       - name: Set up venv + harness deps
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai langgraph
+          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai langgraph fastapi httpx
       - name: Compile all tracked Python (syntax gate)
         run: .venv/bin/python -m compileall -q $(git ls-files '*.py')
       - name: No-API unit tests (best-of-N selection + ci_gate)
@@ -64,7 +64,7 @@ jobs:
       - name: Set up venv + deps
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai langgraph
+          uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai langgraph fastapi httpx
       - name: Build the local benchmark (clone repos + per-issue venvs)
         run: .venv/bin/python eval/verify.py --manifest "${{ inputs.manifest || 'eval/issues_v2.yaml' }}"
       - name: Run the agent over the benchmark

@@ -56,6 +56,7 @@ each documented in [`EXPERIMENTS.md`](EXPERIMENTS.md), the run-by-run results le
 
 ```mermaid
 flowchart TB
+    trigger(["GitHub Action → service.py /solve"]) -.->|deploy + trigger| issue
     issue["Failing issue + gold test"] --> agent
     agent["LLM agent<br/>tools: bash · str_replace · submit"] -->|proposed shell| guard
     guard{{"command_guard<br/>opt-in safety layer"}} -->|allowed| seam
@@ -73,11 +74,13 @@ flowchart TB
     gate{{"Deterministic gate<br/>pytest red to green /<br/>official F2P flip + P2P hold"}} -->|resolved| done["accept"]
     gate -.->|still red| agent
     done --> hitl["HITL approval<br/>human approves / rejects"]
+    hitl -->|approved| pr(["open PR · gh pr create"])
 ```
 
 **Same loop, four control strategies** (single · governed · multi-agent · best-of-N) and a production
 layer around it (LiteLLM cheap→strong router · Langfuse tracing · eval-gated CI · HITL approval ·
-feedback flywheel) — detailed below.
+feedback flywheel · **PR creation** · **agent-as-a-service** deployable behind a GitHub Action) —
+detailed below.
 
 The agent explores with `grep`/`cat`, edits with a precise unique-match `str_replace`, and re-runs the
 test itself until it passes. **Where** commands run is swappable behind one `exec_raw` seam — a fast local
@@ -120,8 +123,15 @@ uv pip install --python .venv/bin/python -r eval/requirements-dev.txt openai dat
 .venv/bin/python eval_flywheel.py --demo                           # failure → new verified eval case
 .venv/bin/python injection_eval.py --live                          # adversarial injection block rate
 MECHANIC_GUARD=1 .venv/bin/python solve.py --issue furl-163        # run with the safety guard enforced
-.venv/bin/python -m pytest tests/ -q                               # 70 no-API/no-Docker unit tests
+.venv/bin/python pr_open.py --issue furl-163 --base master         # open a PR for a fix (dry-run by default)
+.venv/bin/python -m uvicorn service:app --port 8080                # agent-as-a-service: GET /health, POST /solve
+.venv/bin/python -m pytest tests/ -q                               # 84 no-API/no-Docker unit tests
 ```
+
+**Deploy + trigger from CI.** `service.py` (FastAPI) exposes the agent over HTTP (`POST /solve`, token-auth
+via `X-Mechanic-Token`); [`.github/workflows/repair.yml`](.github/workflows/repair.yml) calls that service on
+`workflow_dispatch` or when an issue is labeled `mechanic`, opens a PR for the fix, and comments the outcome
+back on the issue — the agent as a CI/CD step, not a laptop script.
 
 ## Demos (real output)
 
@@ -171,8 +181,10 @@ multi_agent.py       # LangGraph 4-role pipeline;  graph_solve.py = single-agent
 hitl_solve.py        # human-in-the-loop approval gate (LangGraph interrupt + checkpointer)
 eval_flywheel.py     # failed trace → LLM repro → red-on-base gate → new verified eval case
 injection_defense.py # command-guard + hardened prompt;  injection_eval.py = adversarial block-rate eval
+pr_open.py           # open a PR for an accepted fix (branch/commit/push + gh pr create; dry-run by default)
+service.py           # FastAPI agent-as-a-service (/health, /solve);  .github/workflows/repair.yml triggers it
 router.py · tracing.py · ci_gate.py    # LiteLLM router · Langfuse · eval-gated CI
 eval/                # benchmark: issues*.yaml manifests, repros/, verify.py harness, swebench subset
-tests/               # 70 no-API/no-Docker unit tests (selection, gate, HITL, flywheel, guard, router)
+tests/               # 84 no-API/no-Docker unit tests (selection, gate, HITL, flywheel, guard, router, PR, service)
 EXPERIMENTS.md       # the run-by-run results ledger (dataset × engine × model × result)
 ```

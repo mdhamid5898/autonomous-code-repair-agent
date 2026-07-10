@@ -3,3 +3,5 @@
 ruamel.yaml   # lets verify.py pin base_commit / repro_verified back into issues.yaml (comments preserved)
 pyyaml        # read-only fallback if ruamel is absent
 pytest        # harness-side: the no-API unit tests in tests/ (best-of-N selection, ci_gate) for CI
+fastapi       # service.py (agent-as-a-service HTTP surface); tests/test_service.py imports it via TestClient
+httpx         # required by fastapi's TestClient (tests/test_service.py) — in-process, no network
